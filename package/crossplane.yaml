@@ -1,0 +1,23 @@
+---
+apiVersion: meta.pkg.crossplane.io/v1beta1
+kind: Function
+metadata:
+  name: function-approve
+  annotations:
+    meta.crossplane.io/maintainer: Upbound <support@upbound.io>
+    meta.crossplane.io/source: github.com/upbound/function-approve
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: A composition function for implementing manual approval workflows in Crossplane.
+    meta.crossplane.io/readme: |
+      This composition function implements a manual approval workflow for Crossplane resources.
+      It tracks changes to specified fields using hash comparison, pauses reconciliation 
+      when changes are detected, and requires explicit approval before allowing 
+      reconciliation to continue.
+
+      Key features:
+      - Field-level change detection using configurable hash algorithms
+      - Pausing reconciliation via annotations
+      - Status-based approval mechanism
+      - Detailed condition reporting
+      - No external dependencies
+spec: {}
