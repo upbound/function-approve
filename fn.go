@@ -152,7 +152,9 @@ func (f *Function) handleApprovedChanges(req *fnv1.RunFunctionRequest, in *v1bet
 		return err
 	}
 
-	// No need to modify desired state when approved - let changes proceed
+	// When approved, we just pass through the desired state from the request
+	// without any modifications - this preserves the exact output from previous functions
+	rsp.Desired = req.GetDesired()
 
 	// Set success condition
 	response.ConditionTrue(rsp, "FunctionSuccess", "Success").
@@ -531,10 +533,20 @@ func (f *Function) saveNewHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, 
 
 // saveOldHash updates the old hash with the new hash after approval
 func (f *Function) saveOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, hash string, rsp *fnv1.RunFunctionResponse) error {
-	xrStatus, dxr, err := f.getXRAndStatus(req)
+	// For the status update, we need to access the composite resource in the desired state
+	// that we'll be passing through later
+	dxr, err := request.GetDesiredCompositeResource(req)
 	if err != nil {
-		response.Fatal(rsp, err)
+		response.Fatal(rsp, errors.Wrap(err, "cannot get desired composite resource"))
 		return err
+	}
+
+	// Get current status
+	xrStatus := make(map[string]interface{})
+	if err := dxr.Resource.GetValueInto("status", &xrStatus); err != nil {
+		// Not fatal if we can't get current status
+		f.log.Debug("Could not get status from desired XR", "error", err)
+		xrStatus = make(map[string]interface{})
 	}
 
 	// Remove status. prefix if present
@@ -546,13 +558,20 @@ func (f *Function) saveOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, 
 		return err
 	}
 
-	// Write updated status back to dxr
+	// Reset approval field since it's been processed
+	approvalField := strings.TrimPrefix(*in.ApprovalField, "status.")
+	if err := SetNestedValue(xrStatus, approvalField, false); err != nil {
+		f.log.Debug("Cannot reset approval field", "error", err)
+		// Not a fatal error
+	}
+
+	// Update the status on the desired resource
 	if err := dxr.Resource.SetValue("status", xrStatus); err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot write updated status back into composite resource"))
+		response.Fatal(rsp, errors.Wrap(err, "cannot write updated status back into desired composite resource"))
 		return err
 	}
 
-	// Save the updated desired composite resource
+	// Update the resource in the response
 	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
 		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composite resource in %T", rsp))
 		return err
