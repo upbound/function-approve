@@ -116,30 +116,31 @@ func (f *Function) needsApproval(approved bool, oldHash, newHash string) bool {
 
 // handleUnapprovedChanges processes the case where changes need approval
 func (f *Function) handleUnapprovedChanges(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, oldHash, newHash string) error {
-	// Changes detected and not approved, pause reconciliation
-	if err := f.pauseReconciliation(req, in, rsp); err != nil {
-		return err
-	}
-
 	// Set condition to show approval is needed
 	msg := "Changes detected. Approval required."
 	if in.ApprovalMessage != nil {
 		msg = *in.ApprovalMessage
 	}
 
-	condition := response.ConditionFalse(rsp, "ApprovalRequired", "WaitingForApproval").
-		WithMessage(msg).
-		TargetCompositeAndClaim()
-
+	detailedMsg := msg
 	if in.DetailedCondition != nil && *in.DetailedCondition {
 		// Add detailed information about what changed and what needs approval
-		detailedMsg := msg + "\nCurrent hash: " + newHash + "\n" +
+		detailedMsg = msg + "\nCurrent hash: " + newHash + "\n" +
 			"Approved hash: " + oldHash + "\n" +
 			"Approve this change by setting " + *in.ApprovalField + " to true"
-		_ = condition.WithMessage(detailedMsg)
 	}
 
-	f.log.Debug("Pausing reconciliation asking for approval", "message", msg)
+	// Changes detected and not approved, pause reconciliation
+	if err := f.pauseReconciliation(req, in, rsp); err != nil {
+		return err
+	}
+
+	// After pauseReconciliation, add ApprovalRequired condition
+	response.ConditionFalse(rsp, "ApprovalRequired", "WaitingForApproval").
+		WithMessage(detailedMsg).
+		TargetCompositeAndClaim()
+
+	f.log.Info("Pausing reconciliation asking for approval", "message", msg, "setSyncedFalse", *in.SetSyncedFalse)
 	return nil
 }
 
@@ -601,7 +602,9 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 func (f *Function) pauseReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) error {
 	// Check if we should use Synced=False condition instead of annotation
 	if in.SetSyncedFalse != nil && *in.SetSyncedFalse {
-		// Set Synced condition to False to pause reconciliation
+		// Set Synced condition to False with high priority to pause reconciliation
+		f.log.Info("Setting Synced=False condition to pause reconciliation")
+		rsp.Conditions = nil // Clear any existing conditions to ensure ours takes precedence
 		response.ConditionFalse(rsp, "Synced", "ReconciliationPaused").
 			WithMessage("Resource synchronization paused due to pending approval").
 			TargetCompositeAndClaim()
@@ -639,6 +642,17 @@ func (f *Function) pauseReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1
 func (f *Function) resumeReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) error {
 	// If using Synced=False condition, set Synced=True to resume
 	if in.SetSyncedFalse != nil && *in.SetSyncedFalse {
+		f.log.Info("Setting Synced=True condition to resume reconciliation")
+
+		// Find and remove any existing Synced=False conditions
+		var filteredConditions []*fnv1.Condition
+		for _, c := range rsp.GetConditions() {
+			if c.GetType() != "Synced" {
+				filteredConditions = append(filteredConditions, c)
+			}
+		}
+		rsp.Conditions = filteredConditions
+
 		// Set Synced condition to True to resume reconciliation
 		response.ConditionTrue(rsp, "Synced", "ReconciliationResumed").
 			WithMessage("Resource synchronization resumed after approval").

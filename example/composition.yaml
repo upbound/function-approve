@@ -39,3 +39,5 @@ spec:
           toFieldPath: data
           policy:
             fromFieldPath: Required
+        readinessChecks:
+        - type: None
