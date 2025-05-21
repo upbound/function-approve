@@ -44,11 +44,6 @@ type Input struct {
 	// +optional
 	NewHashField *string `json:"newHashField,omitempty"`
 
-	// PauseAnnotation defines which annotation to use for pausing reconciliation
-	// Default is "crossplane.io/paused"
-	// +optional
-	PauseAnnotation *string `json:"pauseAnnotation,omitempty"`
-
 	// DetailedCondition adds a detailed condition about approval status
 	// Default is true
 	// +optional
@@ -58,11 +53,4 @@ type Input struct {
 	// Default is "Changes detected. Approval required."
 	// +optional
 	ApprovalMessage *string `json:"approvalMessage,omitempty"`
-
-	// SetSyncedFalse controls whether to set the Synced=False condition
-	// instead of using the pause annotation. Some environments may
-	// require this approach instead of annotations.
-	// Default is false
-	// +optional
-	SetSyncedFalse *bool `json:"setSyncedFalse,omitempty"`
 }

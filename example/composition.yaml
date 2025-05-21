@@ -8,20 +8,6 @@ spec:
     kind: XApproval
   mode: Pipeline
   pipeline:
-  - step: require-approval
-    functionRef:
-      name: function-approve
-    input:
-      apiVersion: approve.fn.crossplane.io/v1alpha1
-      kind: Input
-      dataField: "spec.resources"
-      approvalField: "status.approved"
-      newHashField: "status.newHash"
-      oldHashField: "status.oldHash"
-      pauseAnnotation: "crossplane.io/paused"
-      detailedCondition: true
-      approvalMessage: "Changes detected. Administrative approval required."
-      setSyncedFalse: true
   - step: render-resources
     functionRef:
       name: function-patch-and-transform
@@ -41,3 +27,15 @@ spec:
             fromFieldPath: Required
         readinessChecks:
         - type: None
+  - step: require-approval
+    functionRef:
+      name: function-approve
+    input:
+      apiVersion: approve.fn.crossplane.io/v1alpha1
+      kind: Input
+      dataField: "spec.resources"
+      approvalField: "status.approved"
+      newHashField: "status.newHash"
+      oldHashField: "status.oldHash"
+      detailedCondition: true
+      approvalMessage: "Changes detected. Administrative approval required."

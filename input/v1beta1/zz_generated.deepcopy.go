@@ -33,11 +33,6 @@ func (in *Input) DeepCopyInto(out *Input) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.PauseAnnotation != nil {
-		in, out := &in.PauseAnnotation, &out.PauseAnnotation
-		*out = new(string)
-		**out = **in
-	}
 	if in.DetailedCondition != nil {
 		in, out := &in.DetailedCondition, &out.DetailedCondition
 		*out = new(bool)

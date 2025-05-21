@@ -7,8 +7,8 @@ A Crossplane Composition Function for implementing manual approval workflows.
 The `function-approve` provides a serverless approval mechanism at the Crossplane level that:
 
 1. Tracks changes to a specified field by computing a hash
-2. Pauses reconciliation when changes are detected (using either pause annotation or Synced=False condition)
-3. Requires explicit approval before allowing reconciliation to continue
+2. When changes need approval, overwrites Desired state with Observed state to prevent changes
+3. Requires explicit approval before allowing changes to proceed
 4. Prevents drift by storing previously approved state
 
 This function implements the approval workflow using entirely Crossplane-native mechanisms without external dependencies, making it lightweight and reliable.
@@ -30,9 +30,9 @@ spec:
 
 1. When a resource is created or updated, `function-approve` calculates a hash of the monitored field (e.g., `spec.resources`).
 2. The function stores this hash in `status.newHash` (or specified field).
-3. If there's a previous approved hash (`status.oldHash`) and it doesn't match the new hash, reconciliation is paused.
+3. If there's a previous approved hash (`status.oldHash`) and it doesn't match the new hash, the function replaces Desired state with Observed state.
 4. An operator must approve the change by setting `status.approved = true`.
-5. After approval, the new hash is stored as the approved hash, the approval flag is reset, and reconciliation resumes.
+5. After approval, the new hash is stored as the approved hash, the approval flag is reset, and changes are allowed to proceed.
 6. If a customer modifies an existing claim after approval, this will generate a new hash, requiring another approval.
 
 ## Example
@@ -70,10 +70,8 @@ spec:
 | `approvalField` | string | Status field to check for approval. Default: `status.approved` |
 | `oldHashField` | string | Status field to store previously approved hash. Default: `status.oldHash` |
 | `newHashField` | string | Status field to store current hash. Default: `status.newHash` |
-| `pauseAnnotation` | string | Annotation to use for pausing reconciliation. Default: `crossplane.io/paused` |
 | `detailedCondition` | bool | Whether to add detailed information to conditions. Default: `true` |
 | `approvalMessage` | string | Message to display when approval is required. Default: `Changes detected. Approval required.` |
-| `setSyncedFalse` | bool | Use Synced=False condition instead of pause annotation. Default: `false` |
 
 ## Using with Custom Resources
 
@@ -119,7 +117,7 @@ spec:
 
 ## Approving Changes
 
-When changes are detected, the resource's reconciliation is paused, and its condition will show `ApprovalRequired` status. To approve the changes, patch the resource's status:
+When changes are detected, the Desired state is replaced with Observed state (preventing any changes from being applied), and the resource will show an `ApprovalRequired` condition. To approve the changes, patch the resource's status:
 
 ```yaml
 kubectl patch xapproval example --type=merge --subresource=status -p '{"status":{"approved":true}}'
@@ -127,8 +125,7 @@ kubectl patch xapproval example --type=merge --subresource=status -p '{"status":
 
 After approval, the function will:
 1. Record the new state as the approved state
-2. Remove the pause annotation
-3. Allow reconciliation to continue
+2. Allow the changes to proceed normally without overwriting the Desired state
 
 ## Resetting Approval State
 
@@ -143,31 +140,20 @@ kubectl patch xapproval example --type=merge --subresource=status -p '{"status":
 - Use RBAC to control who can approve changes by restricting access to the status subresource
 - Consider implementing additional verification steps or multi-party approval in your workflow
 
-## Pausing Reconciliation Methods
+## How Changes Are Prevented
 
-The function supports two methods to pause reconciliation when changes are detected:
+The function uses a direct approach to prevent changes when approval is required:
 
-### 1. Pause Annotation (Default)
+1. When changes are detected but not yet approved, the function:
+   - Replaces the Desired composite resource with the Observed resource
+   - Replaces any Desired composed resources with the Observed resources
+   - Sets an ApprovalRequired condition for visibility
 
-By default, the function adds the `crossplane.io/paused` annotation (or specified annotation) to pause reconciliation:
-
-```yaml
-pauseAnnotation: "crossplane.io/paused"
-setSyncedFalse: false  # Or omit this field as it defaults to false
-```
-
-### 2. Synced=False Condition
-
-Alternatively, the function can set the Synced condition to False instead of using an annotation:
-
-```yaml
-setSyncedFalse: true
-```
-
-This approach may be preferred in environments where:
-- Annotations are subject to stricter validation or policies
-- You want to leverage Crossplane's native condition-based reconciliation control
-- You need better integration with monitoring systems that use conditions
+2. This approach has several benefits:
+   - Deterministic behavior - changes are physically prevented
+   - No reliance on pause annotations or condition interpretation by the reconciler
+   - Works consistently across different Crossplane versions
+   - Clear separation of approval status and reconciliation mechanics
 
 ## Complete Example
 
@@ -196,7 +182,6 @@ spec:
       oldHashField: "status.approvedHash"
       detailedCondition: true
       approvalMessage: "Cluster changes require admin approval"
-      setSyncedFalse: true  # Use Synced=False condition instead of pause annotation
   - step: create-resources
     functionRef:
       name: function-patch-and-transform

@@ -130,17 +130,17 @@ func (f *Function) handleUnapprovedChanges(req *fnv1.RunFunctionRequest, in *v1b
 			"Approve this change by setting " + *in.ApprovalField + " to true"
 	}
 
-	// Changes detected and not approved, pause reconciliation
-	if err := f.pauseReconciliation(req, in, rsp); err != nil {
+	// Changes detected and not approved, overwrite Desired State with Observed State
+	if err := f.overwriteDesiredWithObserved(req, rsp); err != nil {
 		return err
 	}
 
-	// After pauseReconciliation, add ApprovalRequired condition
+	// Add ApprovalRequired condition for visibility
 	response.ConditionFalse(rsp, "ApprovalRequired", "WaitingForApproval").
 		WithMessage(detailedMsg).
 		TargetCompositeAndClaim()
 
-	f.log.Info("Pausing reconciliation asking for approval", "message", msg, "setSyncedFalse", *in.SetSyncedFalse)
+	f.log.Info("Preventing desired state changes until approval", "message", msg)
 	return nil
 }
 
@@ -152,10 +152,7 @@ func (f *Function) handleApprovedChanges(req *fnv1.RunFunctionRequest, in *v1bet
 		return err
 	}
 
-	// Remove pause annotation if it exists
-	if err := f.resumeReconciliation(req, in, rsp); err != nil {
-		return err
-	}
+	// No need to modify desired state when approved - let changes proceed
 
 	// Set success condition
 	response.ConditionTrue(rsp, "FunctionSuccess", "Success").
@@ -194,19 +191,9 @@ func (f *Function) parseInput(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctio
 		in.NewHashField = &defaultField
 	}
 
-	if in.PauseAnnotation == nil {
-		defaultAnnotation := "crossplane.io/paused"
-		in.PauseAnnotation = &defaultAnnotation
-	}
-
 	if in.DetailedCondition == nil {
 		defaultValue := true
 		in.DetailedCondition = &defaultValue
-	}
-
-	if in.SetSyncedFalse == nil {
-		defaultValue := false
-		in.SetSyncedFalse = &defaultValue
 	}
 
 	return in, nil
@@ -409,14 +396,22 @@ func SetNestedValue(root map[string]interface{}, key string, value interface{}) 
 	return nil
 }
 
-// extractDataToHash extracts the data to hash from the specified field
+// extractDataToHash extracts the data to hash from either the desired state or specified field
 func (f *Function) extractDataToHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) (interface{}, error) {
-	oxr, err := request.GetObservedCompositeResource(req)
+	dxr, err := request.GetDesiredCompositeResource(req)
 	if err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot get observed composite resource"))
+		response.Fatal(rsp, errors.Wrap(err, "cannot get desired composite resource"))
 		return nil, err
 	}
 
+	// Extract from desired resources
+	// Check if desired composed resources exist first
+	if drs := req.GetDesired().GetResources(); len(drs) > 0 {
+		f.log.Debug("Calculating hash of desired composed resources")
+		return req.GetDesired().GetResources(), nil
+	}
+
+	// Fallback to specific field if desired resources aren't available
 	// Determine if we're looking in spec or status
 	parts := strings.SplitN(in.DataField, ".", 2)
 	if len(parts) != 2 {
@@ -427,8 +422,8 @@ func (f *Function) extractDataToHash(req *fnv1.RunFunctionRequest, in *v1beta1.I
 	section, field := parts[0], parts[1]
 
 	var sectionData map[string]interface{}
-	if err := oxr.Resource.GetValueInto(section, &sectionData); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot get %s from observed XR", section))
+	if err := dxr.Resource.GetValueInto(section, &sectionData); err != nil {
+		response.Fatal(rsp, errors.Wrapf(err, "cannot get %s from desired XR", section))
 		return nil, err
 	}
 
@@ -598,92 +593,29 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 	return boolValue, nil
 }
 
-// pauseReconciliation pauses resource reconciliation
-func (f *Function) pauseReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) error {
-	// Check if we should use Synced=False condition instead of annotation
-	if in.SetSyncedFalse != nil && *in.SetSyncedFalse {
-		// Set Synced condition to False with high priority to pause reconciliation
-		f.log.Info("Setting Synced=False condition to pause reconciliation")
-		rsp.Conditions = nil // Clear any existing conditions to ensure ours takes precedence
-		response.ConditionFalse(rsp, "Synced", "ReconciliationPaused").
-			WithMessage("Resource synchronization paused due to pending approval").
-			TargetCompositeAndClaim()
-
-		return nil
-	}
-
-	// Otherwise use the pause annotation as before
-	_, dxr, err := f.getXRAndStatus(req)
+// overwriteDesiredWithObserved overwrites the desired state with the observed state to prevent changes
+func (f *Function) overwriteDesiredWithObserved(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
+	// Get observed composite resource
+	oxr, err := request.GetObservedCompositeResource(req)
 	if err != nil {
-		response.Fatal(rsp, err)
-		return err
+		return errors.Wrap(err, "cannot get observed composite resource")
 	}
 
-	// Get current annotations
-	annotations := dxr.Resource.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
+	// Set the observed state as the desired state
+	if err := response.SetDesiredCompositeResource(rsp, oxr); err != nil {
+		return errors.Wrap(err, "cannot set desired composite resource with observed state")
 	}
 
-	// Add pause annotation
-	annotations[*in.PauseAnnotation] = "true"
-	dxr.Resource.SetAnnotations(annotations)
+	// If there are any desired composed resources, clear them out
+	// We're going to just use the observed state for everything
+	if len(req.GetDesired().GetResources()) > 0 {
+		// Get the observed resources map
+		observedResources := req.GetObserved().GetResources()
 
-	// Save the updated desired composite resource
-	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composite resource in %T", rsp))
-		return err
+		// Set the response's desired resources to match observed
+		rsp.Desired.Resources = observedResources
 	}
 
-	return nil
-}
-
-// resumeReconciliation removes pause mechanisms from the resource
-func (f *Function) resumeReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) error {
-	// If using Synced=False condition, set Synced=True to resume
-	if in.SetSyncedFalse != nil && *in.SetSyncedFalse {
-		f.log.Info("Setting Synced=True condition to resume reconciliation")
-
-		// Find and remove any existing Synced=False conditions
-		var filteredConditions []*fnv1.Condition
-		for _, c := range rsp.GetConditions() {
-			if c.GetType() != "Synced" {
-				filteredConditions = append(filteredConditions, c)
-			}
-		}
-		rsp.Conditions = filteredConditions
-
-		// Set Synced condition to True to resume reconciliation
-		response.ConditionTrue(rsp, "Synced", "ReconciliationResumed").
-			WithMessage("Resource synchronization resumed after approval").
-			TargetCompositeAndClaim()
-
-		return nil
-	}
-
-	// Otherwise remove the pause annotation as before
-	_, dxr, err := f.getXRAndStatus(req)
-	if err != nil {
-		response.Fatal(rsp, err)
-		return err
-	}
-
-	// Get current annotations
-	annotations := dxr.Resource.GetAnnotations()
-	if annotations == nil || annotations[*in.PauseAnnotation] == "" {
-		// No pause annotation, nothing to do
-		return nil
-	}
-
-	// Remove pause annotation
-	delete(annotations, *in.PauseAnnotation)
-	dxr.Resource.SetAnnotations(annotations)
-
-	// Save the updated desired composite resource
-	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composite resource in %T", rsp))
-		return err
-	}
-
+	f.log.Info("Overwrote desired state with observed state until approval")
 	return nil
 }
