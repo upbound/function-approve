@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -10,13 +9,14 @@ import (
 	"hash"
 	"strings"
 
+	"github.com/upbound/function-approve/input/v1beta1"
+
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
 	"github.com/crossplane/function-sdk-go/request"
 	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/response"
-	"github.com/upbound/function-approve/input/v1beta1"
 )
 
 // Function implements the manual approval workflow function.
@@ -27,87 +27,133 @@ type Function struct {
 }
 
 // RunFunction runs the Function.
-func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+func (f *Function) RunFunction(_ context.Context, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	f.log.Info("Running function", "tag", req.GetMeta().GetTag())
 
 	rsp := response.To(req, response.DefaultTTL)
 
+	// Parse input and set up initial state
+	in, err := f.initializeFunction(req, rsp)
+	if err != nil {
+		return rsp, nil //nolint:nilerr // errors are handled in rsp
+	}
+
+	// Process hashing logic and get approval status
+	newHash, oldHash, approved, err := f.processHashingAndApproval(req, in, rsp)
+	if err != nil {
+		return rsp, nil //nolint:nilerr // errors are handled in rsp
+	}
+
+	// Check if changes need approval
+	if f.needsApproval(approved, oldHash, newHash) {
+		err := f.handleUnapprovedChanges(req, in, rsp, oldHash, newHash)
+		if err != nil {
+			return rsp, nil //nolint:nilerr // errors are handled in rsp
+		}
+		return rsp, nil
+	}
+
+	// Handle approved changes
+	err = f.handleApprovedChanges(req, in, rsp, newHash)
+	if err != nil {
+		return rsp, nil //nolint:nilerr // errors are handled in rsp
+	}
+
+	return rsp, nil
+}
+
+// initializeFunction parses input and initializes the function
+func (f *Function) initializeFunction(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) (*v1beta1.Input, error) {
 	// Parse input and get defaults
 	in, err := f.parseInput(req, rsp)
 	if err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return nil, err
 	}
 
 	// Initialize response with desired XR and preserve context
 	if err := f.initializeResponse(req, rsp); err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return nil, err
 	}
 
+	return in, nil
+}
+
+// processHashingAndApproval handles hash computation and approval checks
+func (f *Function) processHashingAndApproval(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) (newHash, oldHash string, approved bool, err error) {
 	// Extract data to hash
 	dataToHash, err := f.extractDataToHash(req, in, rsp)
 	if err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return "", "", false, err
 	}
 
 	// Calculate hash
-	newHash := f.calculateHash(dataToHash, in)
+	newHash = f.calculateHash(dataToHash, in)
 
 	// Get old hash from status
-	oldHash, err := f.getOldHash(req, in, rsp)
+	oldHash, err = f.getOldHash(req, in, rsp)
 	if err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return "", "", false, err
 	}
 
 	// Save new hash to status
 	if err := f.saveNewHash(req, in, newHash, rsp); err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return "", "", false, err
 	}
 
 	// Check approval status
-	approved, err := f.checkApprovalStatus(req, in, rsp)
+	approved, err = f.checkApprovalStatus(req, in, rsp)
 	if err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return "", "", false, err
 	}
 
-	// Reconciliation pause logic
-	if !approved || (oldHash != "" && oldHash != newHash) {
-		// Changes detected and not approved, pause reconciliation
-		if err := f.pauseReconciliation(req, in, rsp); err != nil {
-			return rsp, nil //nolint:nilerr // errors are handled in rsp
-		}
+	return newHash, oldHash, approved, nil
+}
 
-		// Set condition to show approval is needed
-		msg := "Changes detected. Approval required."
-		if in.ApprovalMessage != nil {
-			msg = *in.ApprovalMessage
-		}
+// needsApproval determines if the changes require approval
+func (f *Function) needsApproval(approved bool, oldHash, newHash string) bool {
+	return !approved || (oldHash != "" && oldHash != newHash)
+}
 
-		condition := response.ConditionFalse(rsp, "ApprovalRequired", "WaitingForApproval").
-			WithMessage(msg).
-			TargetCompositeAndClaim()
-
-		if in.DetailedCondition != nil && *in.DetailedCondition {
-			// Add detailed information about what changed and what needs approval
-			detailedMsg := msg + "\nCurrent hash: " + newHash + "\n" +
-				"Approved hash: " + oldHash + "\n" +
-				"Approve this change by setting " + *in.ApprovalField + " to true"
-			condition = condition.WithMessage(detailedMsg)
-		}
-
-		f.log.Debug("Pausing reconciliation asking for approval", "message", msg)
-		// Return early, pausing reconciliation
-		return rsp, nil
+// handleUnapprovedChanges processes the case where changes need approval
+func (f *Function) handleUnapprovedChanges(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, oldHash, newHash string) error {
+	// Changes detected and not approved, pause reconciliation
+	if err := f.pauseReconciliation(req, in, rsp); err != nil {
+		return err
 	}
 
+	// Set condition to show approval is needed
+	msg := "Changes detected. Approval required."
+	if in.ApprovalMessage != nil {
+		msg = *in.ApprovalMessage
+	}
+
+	condition := response.ConditionFalse(rsp, "ApprovalRequired", "WaitingForApproval").
+		WithMessage(msg).
+		TargetCompositeAndClaim()
+
+	if in.DetailedCondition != nil && *in.DetailedCondition {
+		// Add detailed information about what changed and what needs approval
+		detailedMsg := msg + "\nCurrent hash: " + newHash + "\n" +
+			"Approved hash: " + oldHash + "\n" +
+			"Approve this change by setting " + *in.ApprovalField + " to true"
+		_ = condition.WithMessage(detailedMsg)
+	}
+
+	f.log.Debug("Pausing reconciliation asking for approval", "message", msg)
+	return nil
+}
+
+// handleApprovedChanges processes the case where changes are approved
+func (f *Function) handleApprovedChanges(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, newHash string) error {
 	// If we got here, the changes are approved or there are no changes
 	// Update the old hash with the new hash
 	if err := f.saveOldHash(req, in, newHash, rsp); err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return err
 	}
 
 	// Remove pause annotation if it exists
 	if err := f.resumeReconciliation(req, in, rsp); err != nil {
-		return rsp, nil //nolint:nilerr // errors are handled in rsp
+		return err
 	}
 
 	// Set success condition
@@ -115,7 +161,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 		WithMessage("Approved successfully").
 		TargetCompositeAndClaim()
 
-	return rsp, nil
+	return nil
 }
 
 // parseInput parses the function input and sets defaults.
@@ -411,8 +457,6 @@ func (f *Function) calculateHash(data interface{}, in *v1beta1.Input) string {
 	// Choose hash algorithm
 	var h hash.Hash
 	switch *in.HashAlgorithm {
-	case "md5":
-		h = md5.New()
 	case "sha512":
 		h = sha512.New()
 	default:
@@ -434,10 +478,7 @@ func (f *Function) getOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, r
 	}
 
 	// Remove status. prefix if present
-	hashField := *in.OldHashField
-	if strings.HasPrefix(hashField, "status.") {
-		hashField = strings.TrimPrefix(hashField, "status.")
-	}
+	hashField := strings.TrimPrefix(*in.OldHashField, "status.")
 
 	// Get the old hash from status
 	value, exists, err := GetNestedValue(xrStatus, hashField)
@@ -469,10 +510,7 @@ func (f *Function) saveNewHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, 
 	}
 
 	// Remove status. prefix if present
-	hashField := *in.NewHashField
-	if strings.HasPrefix(hashField, "status.") {
-		hashField = strings.TrimPrefix(hashField, "status.")
-	}
+	hashField := strings.TrimPrefix(*in.NewHashField, "status.")
 
 	// Set the new hash in status
 	if err := SetNestedValue(xrStatus, hashField, hash); err != nil {
@@ -504,10 +542,7 @@ func (f *Function) saveOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, 
 	}
 
 	// Remove status. prefix if present
-	hashField := *in.OldHashField
-	if strings.HasPrefix(hashField, "status.") {
-		hashField = strings.TrimPrefix(hashField, "status.")
-	}
+	hashField := strings.TrimPrefix(*in.OldHashField, "status.")
 
 	// Set the old hash in status
 	if err := SetNestedValue(xrStatus, hashField, hash); err != nil {
@@ -539,10 +574,7 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 	}
 
 	// Remove status. prefix if present
-	approvalField := *in.ApprovalField
-	if strings.HasPrefix(approvalField, "status.") {
-		approvalField = strings.TrimPrefix(approvalField, "status.")
-	}
+	approvalField := strings.TrimPrefix(*in.ApprovalField, "status.")
 
 	// Get the approval status
 	value, exists, err := GetNestedValue(xrStatus, approvalField)
@@ -573,10 +605,10 @@ func (f *Function) pauseReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1
 		response.ConditionFalse(rsp, "Synced", "ReconciliationPaused").
 			WithMessage("Resource synchronization paused due to pending approval").
 			TargetCompositeAndClaim()
-		
+
 		return nil
 	}
-	
+
 	// Otherwise use the pause annotation as before
 	_, dxr, err := f.getXRAndStatus(req)
 	if err != nil {
@@ -611,10 +643,10 @@ func (f *Function) resumeReconciliation(req *fnv1.RunFunctionRequest, in *v1beta
 		response.ConditionTrue(rsp, "Synced", "ReconciliationResumed").
 			WithMessage("Resource synchronization resumed after approval").
 			TargetCompositeAndClaim()
-		
+
 		return nil
 	}
-	
+
 	// Otherwise remove the pause annotation as before
 	_, dxr, err := f.getXRAndStatus(req)
 	if err != nil {

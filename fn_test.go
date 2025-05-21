@@ -44,13 +44,13 @@ func TestFunction_MalformedInput(t *testing.T) {
 	}
 
 	// Should have a fatal error result
-	if len(rsp.Results) == 0 {
+	if len(rsp.GetResults()) == 0 {
 		t.Fatal("expected at least one result but got none")
 	}
 
 	// The first result should be a fatal error
-	if rsp.Results[0].Severity != fnv1.Severity_SEVERITY_FATAL {
-		t.Errorf("expected SEVERITY_FATAL but got: %v", rsp.Results[0].Severity)
+	if rsp.GetResults()[0].GetSeverity() != fnv1.Severity_SEVERITY_FATAL {
+		t.Errorf("expected SEVERITY_FATAL but got: %v", rsp.GetResults()[0].GetSeverity())
 	}
 }
 
@@ -99,26 +99,26 @@ func TestFunction_FirstRunNeedsApproval(t *testing.T) {
 	}
 
 	// Should have no error results
-	if len(rsp.Results) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.Results)
+	if len(rsp.GetResults()) > 0 {
+		t.Errorf("expected no results but got: %v", rsp.GetResults())
 	}
 
 	// Should have an approval required condition
-	if len(rsp.Conditions) == 0 {
+	if len(rsp.GetConditions()) == 0 {
 		t.Fatal("expected at least one condition but got none")
 	}
 
 	// The first condition should be ApprovalRequired
-	if rsp.Conditions[0].Type != "ApprovalRequired" {
-		t.Errorf("expected ApprovalRequired condition but got: %v", rsp.Conditions[0].Type)
+	if rsp.GetConditions()[0].GetType() != "ApprovalRequired" {
+		t.Errorf("expected ApprovalRequired condition but got: %v", rsp.GetConditions()[0].GetType())
 	}
 
-	if rsp.Conditions[0].Status != fnv1.Status_STATUS_CONDITION_FALSE {
-		t.Errorf("expected STATUS_CONDITION_FALSE but got: %v", rsp.Conditions[0].Status)
+	if rsp.GetConditions()[0].GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
+		t.Errorf("expected STATUS_CONDITION_FALSE but got: %v", rsp.GetConditions()[0].GetStatus())
 	}
 
-	if rsp.Conditions[0].Reason != "WaitingForApproval" {
-		t.Errorf("expected WaitingForApproval reason but got: %v", rsp.Conditions[0].Reason)
+	if rsp.GetConditions()[0].GetReason() != "WaitingForApproval" {
+		t.Errorf("expected WaitingForApproval reason but got: %v", rsp.GetConditions()[0].GetReason())
 	}
 }
 
@@ -175,26 +175,26 @@ func TestFunction_AlreadyApproved(t *testing.T) {
 	}
 
 	// Should have no error results
-	if len(rsp.Results) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.Results)
+	if len(rsp.GetResults()) > 0 {
+		t.Errorf("expected no results but got: %v", rsp.GetResults())
 	}
 
 	// Should have a success condition
-	if len(rsp.Conditions) == 0 {
+	if len(rsp.GetConditions()) == 0 {
 		t.Fatal("expected at least one condition but got none")
 	}
 
 	// The first condition should be FunctionSuccess
-	if rsp.Conditions[0].Type != "FunctionSuccess" {
-		t.Errorf("expected FunctionSuccess condition but got: %v", rsp.Conditions[0].Type)
+	if rsp.GetConditions()[0].GetType() != "FunctionSuccess" {
+		t.Errorf("expected FunctionSuccess condition but got: %v", rsp.GetConditions()[0].GetType())
 	}
 
-	if rsp.Conditions[0].Status != fnv1.Status_STATUS_CONDITION_TRUE {
-		t.Errorf("expected STATUS_CONDITION_TRUE but got: %v", rsp.Conditions[0].Status)
+	if rsp.GetConditions()[0].GetStatus() != fnv1.Status_STATUS_CONDITION_TRUE {
+		t.Errorf("expected STATUS_CONDITION_TRUE but got: %v", rsp.GetConditions()[0].GetStatus())
 	}
 
-	if rsp.Conditions[0].Reason != "Success" {
-		t.Errorf("expected Success reason but got: %v", rsp.Conditions[0].Reason)
+	if rsp.GetConditions()[0].GetReason() != "Success" {
+		t.Errorf("expected Success reason but got: %v", rsp.GetConditions()[0].GetReason())
 	}
 }
 
@@ -230,7 +230,7 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 					},
 					"status": {
 						"approved": false,
-						"oldHash": "`+oldHash+`"
+						"oldHash": "` + oldHash + `"
 					}
 				}`),
 			},
@@ -248,26 +248,26 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 	}
 
 	// Should have no error results
-	if len(rsp.Results) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.Results)
+	if len(rsp.GetResults()) > 0 {
+		t.Errorf("expected no results but got: %v", rsp.GetResults())
 	}
 
 	// Should have an approval required condition
-	if len(rsp.Conditions) == 0 {
+	if len(rsp.GetConditions()) == 0 {
 		t.Fatal("expected at least one condition but got none")
 	}
 
 	// The first condition should be ApprovalRequired
-	if rsp.Conditions[0].Type != "ApprovalRequired" {
-		t.Errorf("expected ApprovalRequired condition but got: %v", rsp.Conditions[0].Type)
+	if rsp.GetConditions()[0].GetType() != "ApprovalRequired" {
+		t.Errorf("expected ApprovalRequired condition but got: %v", rsp.GetConditions()[0].GetType())
 	}
 
-	if rsp.Conditions[0].Status != fnv1.Status_STATUS_CONDITION_FALSE {
-		t.Errorf("expected STATUS_CONDITION_FALSE but got: %v", rsp.Conditions[0].Status)
+	if rsp.GetConditions()[0].GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
+		t.Errorf("expected STATUS_CONDITION_FALSE but got: %v", rsp.GetConditions()[0].GetStatus())
 	}
 
-	if rsp.Conditions[0].Reason != "WaitingForApproval" {
-		t.Errorf("expected WaitingForApproval reason but got: %v", rsp.Conditions[0].Reason)
+	if rsp.GetConditions()[0].GetReason() != "WaitingForApproval" {
+		t.Errorf("expected WaitingForApproval reason but got: %v", rsp.GetConditions()[0].GetReason())
 	}
 }
 
@@ -304,7 +304,7 @@ func TestFunction_SetSyncedFalse(t *testing.T) {
 					},
 					"status": {
 						"approved": false,
-						"oldHash": "`+oldHash+`"
+						"oldHash": "` + oldHash + `"
 					}
 				}`),
 			},
@@ -322,22 +322,22 @@ func TestFunction_SetSyncedFalse(t *testing.T) {
 	}
 
 	// Should have no error results
-	if len(rsp.Results) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.Results)
+	if len(rsp.GetResults()) > 0 {
+		t.Errorf("expected no results but got: %v", rsp.GetResults())
 	}
 
 	// Should have both ApprovalRequired and Synced conditions
-	if len(rsp.Conditions) < 2 {
-		t.Fatalf("expected at least two conditions but got: %d", len(rsp.Conditions))
+	if len(rsp.GetConditions()) < 2 {
+		t.Fatalf("expected at least two conditions but got: %d", len(rsp.GetConditions()))
 	}
 
 	// Check for Synced=False condition
 	hasSyncedFalse := false
-	for _, cond := range rsp.Conditions {
-		if cond.Type == "Synced" && cond.Status == fnv1.Status_STATUS_CONDITION_FALSE {
+	for _, cond := range rsp.GetConditions() {
+		if cond.GetType() == "Synced" && cond.GetStatus() == fnv1.Status_STATUS_CONDITION_FALSE {
 			hasSyncedFalse = true
-			if cond.Reason != "ReconciliationPaused" {
-				t.Errorf("expected ReconciliationPaused reason but got: %v", cond.Reason)
+			if cond.GetReason() != "ReconciliationPaused" {
+				t.Errorf("expected ReconciliationPaused reason but got: %v", cond.GetReason())
 			}
 		}
 	}
@@ -348,11 +348,11 @@ func TestFunction_SetSyncedFalse(t *testing.T) {
 
 	// Should still have ApprovalRequired condition
 	hasApprovalRequired := false
-	for _, cond := range rsp.Conditions {
-		if cond.Type == "ApprovalRequired" && cond.Status == fnv1.Status_STATUS_CONDITION_FALSE {
+	for _, cond := range rsp.GetConditions() {
+		if cond.GetType() == "ApprovalRequired" && cond.GetStatus() == fnv1.Status_STATUS_CONDITION_FALSE {
 			hasApprovalRequired = true
-			if cond.Reason != "WaitingForApproval" {
-				t.Errorf("expected WaitingForApproval reason but got: %v", cond.Reason)
+			if cond.GetReason() != "WaitingForApproval" {
+				t.Errorf("expected WaitingForApproval reason but got: %v", cond.GetReason())
 			}
 		}
 	}

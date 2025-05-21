@@ -50,7 +50,7 @@ type Input struct {
 	PauseAnnotation *string `json:"pauseAnnotation,omitempty"`
 
 	// DetailedCondition adds a detailed condition about approval status
-	// Default is true 
+	// Default is true
 	// +optional
 	DetailedCondition *bool `json:"detailedCondition,omitempty"`
 
