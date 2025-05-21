@@ -6,6 +6,7 @@ spec:
   compositeTypeRef:
     apiVersion: example.crossplane.io/v1
     kind: XApproval
+  mode: Pipeline
   pipeline:
   - step: require-approval
     functionRef:
@@ -20,21 +21,18 @@ spec:
       pauseAnnotation: "crossplane.io/paused"
       detailedCondition: true
       approvalMessage: "Changes detected. Administrative approval required."
+      setSyncedFalse: true
   - step: render-resources
     functionRef:
       name: function-patch-and-transform
     input:
-      apiVersion: pt.fn.crossplane.io/v1alpha1
+      apiVersion: pt.fn.crossplane.io/v1beta1
       kind: Resources
       resources:
-      - name: example-configmap
+      - name: example-envconfig
         base:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: example-configmap
-          data:
-            key1: value1
+          apiVersion: apiextensions.crossplane.io/v1beta1
+          kind: EnvironmentConfig
         patches:
         - type: FromCompositeFieldPath
           fromFieldPath: spec.resources.data

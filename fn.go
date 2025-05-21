@@ -94,6 +94,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 			condition = condition.WithMessage(detailedMsg)
 		}
 
+		f.log.Debug("Pausing reconciliation asking for approval", "message", msg)
 		// Return early, pausing reconciliation
 		return rsp, nil
 	}
@@ -156,6 +157,11 @@ func (f *Function) parseInput(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctio
 		in.DetailedCondition = &defaultValue
 	}
 
+	if in.SetSyncedFalse == nil {
+		defaultValue := false
+		in.SetSyncedFalse = &defaultValue
+	}
+
 	return in, nil
 }
 
@@ -165,10 +171,10 @@ func (f *Function) initializeResponse(req *fnv1.RunFunctionRequest, rsp *fnv1.Ru
 	if err := f.propagateDesiredXR(req, rsp); err != nil {
 		return err
 	}
-	
+
 	// Ensure the context is preserved
 	f.preserveContext(req, rsp)
-	
+
 	return nil
 }
 
@@ -372,7 +378,7 @@ func (f *Function) extractDataToHash(req *fnv1.RunFunctionRequest, in *v1beta1.I
 	}
 
 	section, field := parts[0], parts[1]
-	
+
 	var sectionData map[string]interface{}
 	if err := oxr.Resource.GetValueInto(section, &sectionData); err != nil {
 		response.Fatal(rsp, errors.Wrapf(err, "cannot get %s from observed XR", section))
@@ -559,8 +565,19 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 	return boolValue, nil
 }
 
-// pauseReconciliation adds a pause annotation to the resource
+// pauseReconciliation pauses resource reconciliation
 func (f *Function) pauseReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) error {
+	// Check if we should use Synced=False condition instead of annotation
+	if in.SetSyncedFalse != nil && *in.SetSyncedFalse {
+		// Set Synced condition to False to pause reconciliation
+		response.ConditionFalse(rsp, "Synced", "ReconciliationPaused").
+			WithMessage("Resource synchronization paused due to pending approval").
+			TargetCompositeAndClaim()
+		
+		return nil
+	}
+	
+	// Otherwise use the pause annotation as before
 	_, dxr, err := f.getXRAndStatus(req)
 	if err != nil {
 		response.Fatal(rsp, err)
@@ -586,8 +603,19 @@ func (f *Function) pauseReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1
 	return nil
 }
 
-// resumeReconciliation removes the pause annotation from the resource
+// resumeReconciliation removes pause mechanisms from the resource
 func (f *Function) resumeReconciliation(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) error {
+	// If using Synced=False condition, set Synced=True to resume
+	if in.SetSyncedFalse != nil && *in.SetSyncedFalse {
+		// Set Synced condition to True to resume reconciliation
+		response.ConditionTrue(rsp, "Synced", "ReconciliationResumed").
+			WithMessage("Resource synchronization resumed after approval").
+			TargetCompositeAndClaim()
+		
+		return nil
+	}
+	
+	// Otherwise remove the pause annotation as before
 	_, dxr, err := f.getXRAndStatus(req)
 	if err != nil {
 		response.Fatal(rsp, err)

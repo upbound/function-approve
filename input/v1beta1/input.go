@@ -58,4 +58,11 @@ type Input struct {
 	// Default is "Changes detected. Approval required."
 	// +optional
 	ApprovalMessage *string `json:"approvalMessage,omitempty"`
+
+	// SetSyncedFalse controls whether to set the Synced=False condition
+	// instead of using the pause annotation. Some environments may
+	// require this approach instead of annotations.
+	// Default is false
+	// +optional
+	SetSyncedFalse *bool `json:"setSyncedFalse,omitempty"`
 }

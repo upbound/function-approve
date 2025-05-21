@@ -7,7 +7,7 @@ A Crossplane Composition Function for implementing manual approval workflows.
 The `function-approve` provides a serverless approval mechanism at the Crossplane level that:
 
 1. Tracks changes to a specified field by computing a hash
-2. Pauses reconciliation when changes are detected
+2. Pauses reconciliation when changes are detected (using either pause annotation or Synced=False condition)
 3. Requires explicit approval before allowing reconciliation to continue
 4. Prevents drift by storing previously approved state
 
@@ -73,6 +73,7 @@ spec:
 | `pauseAnnotation` | string | Annotation to use for pausing reconciliation. Default: `crossplane.io/paused` |
 | `detailedCondition` | bool | Whether to add detailed information to conditions. Default: `true` |
 | `approvalMessage` | string | Message to display when approval is required. Default: `Changes detected. Approval required.` |
+| `setSyncedFalse` | bool | Use Synced=False condition instead of pause annotation. Default: `false` |
 
 ## Using with Custom Resources
 
@@ -142,6 +143,32 @@ kubectl patch xapproval example --type=merge --subresource=status -p '{"status":
 - Use RBAC to control who can approve changes by restricting access to the status subresource
 - Consider implementing additional verification steps or multi-party approval in your workflow
 
+## Pausing Reconciliation Methods
+
+The function supports two methods to pause reconciliation when changes are detected:
+
+### 1. Pause Annotation (Default)
+
+By default, the function adds the `crossplane.io/paused` annotation (or specified annotation) to pause reconciliation:
+
+```yaml
+pauseAnnotation: "crossplane.io/paused"
+setSyncedFalse: false  # Or omit this field as it defaults to false
+```
+
+### 2. Synced=False Condition
+
+Alternatively, the function can set the Synced condition to False instead of using an annotation:
+
+```yaml
+setSyncedFalse: true
+```
+
+This approach may be preferred in environments where:
+- Annotations are subject to stricter validation or policies
+- You want to leverage Crossplane's native condition-based reconciliation control
+- You need better integration with monitoring systems that use conditions
+
 ## Complete Example
 
 Here's a complete example of a composition using `function-approve`:
@@ -169,6 +196,7 @@ spec:
       oldHashField: "status.approvedHash"
       detailedCondition: true
       approvalMessage: "Cluster changes require admin approval"
+      setSyncedFalse: true  # Use Synced=False condition instead of pause annotation
   - step: create-resources
     functionRef:
       name: function-patch-and-transform

@@ -230,7 +230,7 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 					},
 					"status": {
 						"approved": false,
-						"oldHash": "` + oldHash + `"
+						"oldHash": "`+oldHash+`"
 					}
 				}`),
 			},
@@ -269,4 +269,98 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 	if rsp.Conditions[0].Reason != "WaitingForApproval" {
 		t.Errorf("expected WaitingForApproval reason but got: %v", rsp.Conditions[0].Reason)
 	}
+}
+
+func TestFunction_SetSyncedFalse(t *testing.T) {
+	f := &Function{
+		log: logging.NewNopLogger(),
+	}
+
+	const oldHash = "e02c6d35c585a43c62dc2ae14a5385b8a86168b36be7a0d985c0c09afca4ffbe"
+
+	req := &fnv1.RunFunctionRequest{
+		Meta: &fnv1.RequestMeta{Tag: "fn-approval"},
+		Input: resource.MustStructJSON(`{
+			"apiVersion": "approve.fn.crossplane.io/v1alpha1",
+			"kind": "Input",
+			"dataField": "spec.resources",
+			"approvalField": "status.approved",
+			"oldHashField": "status.oldHash",
+			"newHashField": "status.newHash",
+			"setSyncedFalse": true
+		}`),
+		Observed: &fnv1.State{
+			Composite: &fnv1.Resource{
+				Resource: resource.MustStructJSON(`{
+					"apiVersion": "example.org/v1",
+					"kind": "XR",
+					"metadata": {
+						"name": "test-xr"
+					},
+					"spec": {
+						"resources": {
+							"test": "updated-data"
+						}
+					},
+					"status": {
+						"approved": false,
+						"oldHash": "`+oldHash+`"
+					}
+				}`),
+			},
+		},
+	}
+
+	rsp, err := f.RunFunction(context.Background(), req)
+
+	if err != nil {
+		t.Errorf("expected no error but got: %v", err)
+	}
+
+	if rsp == nil {
+		t.Fatal("expected response but got nil")
+	}
+
+	// Should have no error results
+	if len(rsp.Results) > 0 {
+		t.Errorf("expected no results but got: %v", rsp.Results)
+	}
+
+	// Should have both ApprovalRequired and Synced conditions
+	if len(rsp.Conditions) < 2 {
+		t.Fatalf("expected at least two conditions but got: %d", len(rsp.Conditions))
+	}
+
+	// Check for Synced=False condition
+	hasSyncedFalse := false
+	for _, cond := range rsp.Conditions {
+		if cond.Type == "Synced" && cond.Status == fnv1.Status_STATUS_CONDITION_FALSE {
+			hasSyncedFalse = true
+			if cond.Reason != "ReconciliationPaused" {
+				t.Errorf("expected ReconciliationPaused reason but got: %v", cond.Reason)
+			}
+		}
+	}
+
+	if !hasSyncedFalse {
+		t.Error("expected to find Synced=False condition but didn't")
+	}
+
+	// Should still have ApprovalRequired condition
+	hasApprovalRequired := false
+	for _, cond := range rsp.Conditions {
+		if cond.Type == "ApprovalRequired" && cond.Status == fnv1.Status_STATUS_CONDITION_FALSE {
+			hasApprovalRequired = true
+			if cond.Reason != "WaitingForApproval" {
+				t.Errorf("expected WaitingForApproval reason but got: %v", cond.Reason)
+			}
+		}
+	}
+
+	if !hasApprovalRequired {
+		t.Error("expected to find ApprovalRequired condition but didn't")
+	}
+
+	// When using setSyncedFalse=true, we should have a Synced=False condition
+	// and not use the pause annotation. We've verified the Synced condition above.
 }
