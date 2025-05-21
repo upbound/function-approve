@@ -152,9 +152,22 @@ func (f *Function) handleApprovedChanges(req *fnv1.RunFunctionRequest, in *v1bet
 		return err
 	}
 
-	// When approved, we just pass through the desired state from the request
-	// without any modifications - this preserves the exact output from previous functions
-	rsp.Desired = req.GetDesired()
+	// When approved, we need to carefully handle the resourceRefs field
+	// Get the desired composite resource to update properties properly
+	dxr, err := request.GetDesiredCompositeResource(req)
+	if err != nil {
+		response.Fatal(rsp, errors.Wrap(err, "cannot get desired composite resource"))
+		return err
+	}
+
+	// Save the desired XR in the response
+	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
+		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composite resource in %T", rsp))
+		return err
+	}
+
+	// For composed resources, we can pass through from the request
+	rsp.Desired.Resources = req.GetDesired().GetResources()
 
 	// Set success condition
 	response.ConditionTrue(rsp, "FunctionSuccess", "Success").
