@@ -152,22 +152,14 @@ func (f *Function) handleApprovedChanges(req *fnv1.RunFunctionRequest, in *v1bet
 		return err
 	}
 
-	// When approved, we need to carefully handle the resourceRefs field
-	// Get the desired composite resource to update properties properly
-	dxr, err := request.GetDesiredCompositeResource(req)
-	if err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot get desired composite resource"))
-		return err
-	}
+	// For approved changes, we need to ensure we properly handle both
+	// the composite resource and composed resources to avoid duplication
 
-	// Save the desired XR in the response
-	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composite resource in %T", rsp))
-		return err
+	// Keep only the composed resources, not the main XR (which is handled via saveOldHash)
+	// This avoids duplication in the render output
+	if req.GetDesired().GetResources() != nil {
+		rsp.Desired.Resources = req.GetDesired().GetResources()
 	}
-
-	// For composed resources, we can pass through from the request
-	rsp.Desired.Resources = req.GetDesired().GetResources()
 
 	// Set success condition
 	response.ConditionTrue(rsp, "FunctionSuccess", "Success").
@@ -627,72 +619,20 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 
 // overwriteDesiredWithObserved overwrites the desired state with the observed state to prevent changes
 func (f *Function) overwriteDesiredWithObserved(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
-	// Handle the composite resource
-	if err := f.overwriteCompositeResource(req, rsp); err != nil {
-		return err
-	}
+	// For the unapproved case, we need to replace desired composed resources
+	// with observed composed resources, but we should not modify the composite resource itself
 
-	// Handle any composed resources
+	// Handle only composed resources, not the main XR
 	if err := f.overwriteComposedResources(req, rsp); err != nil {
 		return err
 	}
 
-	f.log.Info("Overwrote desired state with observed state until approval")
+	f.log.Info("Overwrote desired composed resources with observed ones until approval")
 	return nil
 }
 
-// overwriteCompositeResource overwrites the desired composite resource with observed data
-func (f *Function) overwriteCompositeResource(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
-	// Get observed and desired composite resources
-	oxr, err := request.GetObservedCompositeResource(req)
-	if err != nil {
-		return errors.Wrap(err, "cannot get observed composite resource")
-	}
-
-	dxr, err := request.GetDesiredCompositeResource(req)
-	if err != nil {
-		return errors.Wrap(err, "cannot get desired composite resource")
-	}
-
-	// Copy spec from observed to desired
-	if err := f.copyResourceSection(oxr, dxr, "spec"); err != nil {
-		return err
-	}
-
-	// Copy status from observed to desired
-	if err := f.copyResourceSection(oxr, dxr, "status"); err != nil {
-		return err
-	}
-
-	// Update the response with our modified desired resource
-	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
-		return errors.Wrap(err, "cannot set desired composite resource in response")
-	}
-
-	return nil
-}
-
-// copyResourceSection copies a section of data from one resource to another
-func (f *Function) copyResourceSection(from, to *resource.Composite, section string) error {
-	sectionData := make(map[string]interface{})
-	if err := from.Resource.GetValueInto(section, &sectionData); err != nil {
-		// If there's an error getting the section, log it but don't treat as fatal
-		f.log.Debug("Cannot get "+section+" from resource", "error", err)
-		return nil
-	}
-
-	// If the section is empty, nothing to copy
-	if len(sectionData) == 0 {
-		return nil
-	}
-
-	if err := to.Resource.SetValue(section, sectionData); err != nil {
-		f.log.Debug("Cannot set "+section+" from source to destination", "error", err)
-		return errors.Wrap(err, "cannot set "+section+" data")
-	}
-
-	return nil
-}
+// These functions were previously used to overwrite the composite resource
+// Now we only handle composed resources, so they are removed to avoid confusion
 
 // overwriteComposedResources overwrites desired composed resources with observed ones
 func (f *Function) overwriteComposedResources(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
@@ -701,19 +641,40 @@ func (f *Function) overwriteComposedResources(req *fnv1.RunFunctionRequest, rsp 
 		return nil
 	}
 
-	// Get the observed resources map
-	observedResources := req.GetObserved().GetResources()
-	if observedResources == nil {
+	// Get the observed composed resources directly using the SDK
+	observed, err := request.GetObservedComposedResources(req)
+	if err != nil {
+		f.log.Debug("Cannot get observed composed resources", "error", err)
+		// If we can't get composed resources, clear desired
+		rsp.Desired.Resources = make(map[string]*fnv1.Resource)
+		return nil
+	}
+
+	// Check if we have any observed resources
+	if len(observed) == 0 {
 		// No observed resources, clear desired
 		rsp.Desired.Resources = make(map[string]*fnv1.Resource)
 		return nil
 	}
 
-	// Create a copy of the observed resources
-	rsp.Desired.Resources = make(map[string]*fnv1.Resource, len(observedResources))
-	for k, v := range observedResources {
-		rsp.Desired.Resources[k] = v
+	// Create a new map for the desired resources
+	rsp.Desired.Resources = make(map[string]*fnv1.Resource)
+
+	// We need to use the original observed resources to get the correct proto type
+	observedResources := req.GetObserved().GetResources()
+
+	// Add all observed composed resources to the desired state
+	for name := range observed {
+		// Convert name to string for map lookup
+		key := string(name)
+
+		// Get the corresponding proto resource from observed resources
+		if res, ok := observedResources[key]; ok {
+			rsp.Desired.Resources[key] = res
+		}
 	}
 
+	// Log the number of composed resources we're preserving
+	f.log.Debug("Preserved composed resources from observed state", "count", len(rsp.GetDesired().GetResources()))
 	return nil
 }
