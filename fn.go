@@ -152,35 +152,6 @@ func (f *Function) handleApprovedChanges(req *fnv1.RunFunctionRequest, in *v1bet
 		return err
 	}
 
-	// For approved changes, we need to properly pass through the entire desired state
-	// from the previous function, including both the XR and composed resources
-
-	// Get the desired composite resource
-	dxr, err := request.GetDesiredCompositeResource(req)
-	if err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot get desired composite resource"))
-		return err
-	}
-
-	// Set the desired composite resource in the response
-	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composite resource in %T", rsp))
-		return err
-	}
-
-	// Get the desired composed resources using the SDK
-	desired, err := request.GetDesiredComposedResources(req)
-	if err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot get desired resources from %T", req))
-		return err
-	}
-	
-	// Set the desired composed resources in the response
-	if err := response.SetDesiredComposedResources(rsp, desired); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composed resources in %T", rsp))
-		return err
-	}
-
 	// Set success condition
 	response.ConditionTrue(rsp, "FunctionSuccess", "Success").
 		WithMessage("Approved successfully").
@@ -650,9 +621,6 @@ func (f *Function) overwriteDesiredWithObserved(req *fnv1.RunFunctionRequest, rs
 	f.log.Info("Overwrote desired composed resources with observed ones until approval")
 	return nil
 }
-
-// These functions were previously used to overwrite the composite resource
-// Now we only handle composed resources, so they are removed to avoid confusion
 
 // overwriteComposedResources overwrites desired composed resources with observed ones
 func (f *Function) overwriteComposedResources(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
