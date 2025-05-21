@@ -154,6 +154,7 @@ The function uses a direct approach to prevent changes when approval is required
    - No reliance on pause annotations or condition interpretation by the reconciler
    - Works consistently across different Crossplane versions
    - Clear separation of approval status and reconciliation mechanics
+   - Carefully preserves required metadata fields to avoid e2e testing issues
 
 ## Complete Example
 

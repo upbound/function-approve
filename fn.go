@@ -595,27 +595,93 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 
 // overwriteDesiredWithObserved overwrites the desired state with the observed state to prevent changes
 func (f *Function) overwriteDesiredWithObserved(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
-	// Get observed composite resource
+	// Handle the composite resource
+	if err := f.overwriteCompositeResource(req, rsp); err != nil {
+		return err
+	}
+
+	// Handle any composed resources
+	if err := f.overwriteComposedResources(req, rsp); err != nil {
+		return err
+	}
+
+	f.log.Info("Overwrote desired state with observed state until approval")
+	return nil
+}
+
+// overwriteCompositeResource overwrites the desired composite resource with observed data
+func (f *Function) overwriteCompositeResource(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
+	// Get observed and desired composite resources
 	oxr, err := request.GetObservedCompositeResource(req)
 	if err != nil {
 		return errors.Wrap(err, "cannot get observed composite resource")
 	}
 
-	// Set the observed state as the desired state
-	if err := response.SetDesiredCompositeResource(rsp, oxr); err != nil {
-		return errors.Wrap(err, "cannot set desired composite resource with observed state")
+	dxr, err := request.GetDesiredCompositeResource(req)
+	if err != nil {
+		return errors.Wrap(err, "cannot get desired composite resource")
 	}
 
-	// If there are any desired composed resources, clear them out
-	// We're going to just use the observed state for everything
-	if len(req.GetDesired().GetResources()) > 0 {
-		// Get the observed resources map
-		observedResources := req.GetObserved().GetResources()
-
-		// Set the response's desired resources to match observed
-		rsp.Desired.Resources = observedResources
+	// Copy spec from observed to desired
+	if err := f.copyResourceSection(oxr, dxr, "spec"); err != nil {
+		return err
 	}
 
-	f.log.Info("Overwrote desired state with observed state until approval")
+	// Copy status from observed to desired
+	if err := f.copyResourceSection(oxr, dxr, "status"); err != nil {
+		return err
+	}
+
+	// Update the response with our modified desired resource
+	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
+		return errors.Wrap(err, "cannot set desired composite resource in response")
+	}
+
+	return nil
+}
+
+// copyResourceSection copies a section of data from one resource to another
+func (f *Function) copyResourceSection(from, to *resource.Composite, section string) error {
+	sectionData := make(map[string]interface{})
+	if err := from.Resource.GetValueInto(section, &sectionData); err != nil {
+		// If there's an error getting the section, log it but don't treat as fatal
+		f.log.Debug("Cannot get "+section+" from resource", "error", err)
+		return nil
+	}
+
+	// If the section is empty, nothing to copy
+	if len(sectionData) == 0 {
+		return nil
+	}
+
+	if err := to.Resource.SetValue(section, sectionData); err != nil {
+		f.log.Debug("Cannot set "+section+" from source to destination", "error", err)
+		return errors.Wrap(err, "cannot set "+section+" data")
+	}
+
+	return nil
+}
+
+// overwriteComposedResources overwrites desired composed resources with observed ones
+func (f *Function) overwriteComposedResources(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
+	// Only process if there are desired resources to overwrite
+	if len(req.GetDesired().GetResources()) == 0 {
+		return nil
+	}
+
+	// Get the observed resources map
+	observedResources := req.GetObserved().GetResources()
+	if observedResources == nil {
+		// No observed resources, clear desired
+		rsp.Desired.Resources = make(map[string]*fnv1.Resource)
+		return nil
+	}
+
+	// Create a copy of the observed resources
+	rsp.Desired.Resources = make(map[string]*fnv1.Resource, len(observedResources))
+	for k, v := range observedResources {
+		rsp.Desired.Resources[k] = v
+	}
+
 	return nil
 }
