@@ -31,11 +31,8 @@ spec:
               approved:
                 description: Whether the current changes are approved
                 type: boolean
-              oldHash:
-                description: Hash of previously approved resource state
-                type: string
-              newHash:
-                description: Hash of current resource state
+              currentHash:
+                description: Hash of the currently approved resource state
                 type: string
               resourceStatus:
                 description: Status of the underlying resources
