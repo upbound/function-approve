@@ -10,6 +10,10 @@ import (
 	"github.com/crossplane/function-sdk-go/resource"
 )
 
+const (
+	approvalRequiredCondition = "ApprovalRequired"
+)
+
 func TestFunction_MalformedInput(t *testing.T) {
 	f := &Function{
 		log: logging.NewNopLogger(),
@@ -144,7 +148,7 @@ func TestFunction_FirstRunNeedsApproval(t *testing.T) {
 	// Check for the ApprovalRequired condition
 	hasApprovalRequired := false
 	for _, cond := range rsp.GetConditions() {
-		if cond.GetType() == "ApprovalRequired" {
+		if cond.GetType() == approvalRequiredCondition {
 			hasApprovalRequired = true
 			if cond.GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
 				t.Errorf("expected STATUS_CONDITION_FALSE for ApprovalRequired but got: %v", cond.GetStatus())
@@ -356,7 +360,7 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 	// Check for the ApprovalRequired condition
 	hasApprovalRequired := false
 	for _, cond := range rsp.GetConditions() {
-		if cond.GetType() == "ApprovalRequired" {
+		if cond.GetType() == approvalRequiredCondition {
 			hasApprovalRequired = true
 			if cond.GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
 				t.Errorf("expected STATUS_CONDITION_FALSE for ApprovalRequired but got: %v", cond.GetStatus())
@@ -484,7 +488,7 @@ func TestFunction_DesiredResources(t *testing.T) {
 	// Check for the ApprovalRequired condition
 	hasApprovalRequired := false
 	for _, cond := range rsp.GetConditions() {
-		if cond.GetType() == "ApprovalRequired" {
+		if cond.GetType() == approvalRequiredCondition {
 			hasApprovalRequired = true
 			if cond.GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
 				t.Errorf("expected STATUS_CONDITION_FALSE for ApprovalRequired but got: %v", cond.GetStatus())
@@ -609,7 +613,7 @@ func TestFunction_FatalResultsWithApprovalCondition(t *testing.T) {
 	// Check for the ApprovalRequired condition
 	hasApprovalRequired := false
 	for _, cond := range rsp.GetConditions() {
-		if cond.GetType() == "ApprovalRequired" {
+		if cond.GetType() == approvalRequiredCondition {
 			hasApprovalRequired = true
 			if cond.GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
 				t.Errorf("expected STATUS_CONDITION_FALSE for ApprovalRequired but got: %v", cond.GetStatus())
@@ -635,9 +639,8 @@ func TestFunction_ApprovedWithHashChanges(t *testing.T) {
 	// - status.approved = true
 	// - oldHash != newHash (there are changes)
 	// - Should NOT require approval since user already approved
-	
+
 	const approvedHash = "559b7f636dcd75c3dfa6449f7aaa060fd8a52fc7d70f74792feb04930fa2c400"
-	const currentHash = "3c1b7ae0305b9a7f37d1994c471a231c8944f91895e738fd80e1fdf4bf525cb6"
 
 	req := &fnv1.RunFunctionRequest{
 		Meta: &fnv1.RequestMeta{Tag: "fn-approval"},
@@ -737,7 +740,7 @@ func TestFunction_ApprovedWithHashChanges(t *testing.T) {
 
 	// Should NOT have ApprovalRequired condition when approved=true
 	for _, cond := range rsp.GetConditions() {
-		if cond.GetType() == "ApprovalRequired" {
+		if cond.GetType() == approvalRequiredCondition {
 			t.Errorf("should not have ApprovalRequired condition when approved=true but found: %v", cond)
 		}
 	}
