@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
@@ -114,12 +115,28 @@ func TestFunction_FirstRunNeedsApproval(t *testing.T) {
 		t.Fatal("expected response but got nil")
 	}
 
-	// Should have no error results
-	if len(rsp.GetResults()) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.GetResults())
+	// Should have a fatal result indicating approval is required
+	if len(rsp.GetResults()) == 0 {
+		t.Fatal("expected fatal result but got none")
 	}
 
-	// Should have an approval required condition
+	// Check for fatal result with approval message
+	hasFatalResult := false
+	for _, result := range rsp.GetResults() {
+		if result.GetSeverity() == fnv1.Severity_SEVERITY_FATAL {
+			hasFatalResult = true
+			message := result.GetMessage()
+			if !strings.Contains(message, "Changes detected. Approval required.") {
+				t.Errorf("expected fatal message to contain approval text but got: %v", message)
+			}
+		}
+	}
+
+	if !hasFatalResult {
+		t.Error("expected to find fatal result but didn't")
+	}
+
+	// Should also have ApprovalRequired condition
 	if len(rsp.GetConditions()) == 0 {
 		t.Fatal("expected at least one condition but got none")
 	}
@@ -212,7 +229,7 @@ func TestFunction_AlreadyApproved(t *testing.T) {
 		t.Fatal("expected response but got nil")
 	}
 
-	// Should have no error results
+	// Should have no error results when approved
 	if len(rsp.GetResults()) > 0 {
 		t.Errorf("expected no results but got: %v", rsp.GetResults())
 	}
@@ -310,12 +327,28 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 		t.Fatal("expected response but got nil")
 	}
 
-	// Should have no error results
-	if len(rsp.GetResults()) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.GetResults())
+	// Should have a fatal result indicating approval is required
+	if len(rsp.GetResults()) == 0 {
+		t.Fatal("expected fatal result but got none")
 	}
 
-	// Should have an approval required condition
+	// Check for fatal result with approval message
+	hasFatalResult := false
+	for _, result := range rsp.GetResults() {
+		if result.GetSeverity() == fnv1.Severity_SEVERITY_FATAL {
+			hasFatalResult = true
+			message := result.GetMessage()
+			if !strings.Contains(message, "Changes detected. Approval required.") {
+				t.Errorf("expected fatal message to contain approval text but got: %v", message)
+			}
+		}
+	}
+
+	if !hasFatalResult {
+		t.Error("expected to find fatal result but didn't")
+	}
+
+	// Should also have ApprovalRequired condition
 	if len(rsp.GetConditions()) == 0 {
 		t.Fatal("expected at least one condition but got none")
 	}
@@ -422,21 +455,40 @@ func TestFunction_DesiredResources(t *testing.T) {
 		t.Fatal("expected response but got nil")
 	}
 
-	// Should have no error results
-	if len(rsp.GetResults()) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.GetResults())
+	// Should have a fatal result indicating approval is required
+	if len(rsp.GetResults()) == 0 {
+		t.Fatal("expected fatal result but got none")
 	}
 
-	// Should have at least the ApprovalRequired condition
-	if len(rsp.GetConditions()) < 1 {
-		t.Fatalf("expected at least one condition but got: %d", len(rsp.GetConditions()))
+	// Check for fatal result with approval message
+	hasFatalResult := false
+	for _, result := range rsp.GetResults() {
+		if result.GetSeverity() == fnv1.Severity_SEVERITY_FATAL {
+			hasFatalResult = true
+			message := result.GetMessage()
+			if !strings.Contains(message, "Changes detected. Approval required.") {
+				t.Errorf("expected fatal message to contain approval text but got: %v", message)
+			}
+		}
 	}
 
-	// Should still have ApprovalRequired condition
+	if !hasFatalResult {
+		t.Error("expected to find fatal result but didn't")
+	}
+
+	// Should also have ApprovalRequired condition
+	if len(rsp.GetConditions()) == 0 {
+		t.Fatal("expected at least one condition but got none")
+	}
+
+	// Check for the ApprovalRequired condition
 	hasApprovalRequired := false
 	for _, cond := range rsp.GetConditions() {
-		if cond.GetType() == "ApprovalRequired" && cond.GetStatus() == fnv1.Status_STATUS_CONDITION_FALSE {
+		if cond.GetType() == "ApprovalRequired" {
 			hasApprovalRequired = true
+			if cond.GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
+				t.Errorf("expected STATUS_CONDITION_FALSE for ApprovalRequired but got: %v", cond.GetStatus())
+			}
 			if cond.GetReason() != "WaitingForApproval" {
 				t.Errorf("expected WaitingForApproval reason but got: %v", cond.GetReason())
 			}
@@ -468,12 +520,10 @@ func TestFunction_DesiredResources(t *testing.T) {
 	}
 }
 
-func TestFunction_OverwriteDesiredWithObservedOnApprovalRequired(t *testing.T) {
+func TestFunction_FatalResultsWithApprovalCondition(t *testing.T) {
 	f := &Function{
 		log: logging.NewNopLogger(),
 	}
-
-	const oldHash = "e02c6d35c585a43c62dc2ae14a5385b8a86168b36be7a0d985c0c09afca4ffbe"
 
 	req := &fnv1.RunFunctionRequest{
 		Meta: &fnv1.RequestMeta{Tag: "fn-approval"},
@@ -483,7 +533,8 @@ func TestFunction_OverwriteDesiredWithObservedOnApprovalRequired(t *testing.T) {
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
 			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash"
+			"newHashField": "status.newHash",
+			"detailedCondition": true
 		}`),
 		Observed: &fnv1.State{
 			Composite: &fnv1.Resource{
@@ -495,28 +546,10 @@ func TestFunction_OverwriteDesiredWithObservedOnApprovalRequired(t *testing.T) {
 					},
 					"spec": {
 						"resources": {
-							"test": "old-data"
+							"test": "data"
 						}
-					},
-					"status": {
-						"approved": false,
-						"oldHash": "` + oldHash + `"
 					}
 				}`),
-			},
-			Resources: map[string]*fnv1.Resource{
-				"observed-resource": {
-					Resource: resource.MustStructJSON(`{
-						"apiVersion": "example.org/v1",
-						"kind": "ObservedResource",
-						"metadata": {
-							"name": "observed-resource"
-						},
-						"spec": {
-							"param": "old-value"
-						}
-					}`),
-				},
 			},
 		},
 		Desired: &fnv1.State{
@@ -529,28 +562,10 @@ func TestFunction_OverwriteDesiredWithObservedOnApprovalRequired(t *testing.T) {
 					},
 					"spec": {
 						"resources": {
-							"test": "new-data" 
+							"test": "data"
 						}
-					},
-					"status": {
-						"approved": false,
-						"oldHash": "` + oldHash + `"
 					}
 				}`),
-			},
-			Resources: map[string]*fnv1.Resource{
-				"desired-resource": {
-					Resource: resource.MustStructJSON(`{
-						"apiVersion": "example.org/v1",
-						"kind": "DesiredResource",
-						"metadata": {
-							"name": "desired-resource"
-						},
-						"spec": {
-							"param": "new-value"
-						}
-					}`),
-				},
 			},
 		},
 	}
@@ -565,72 +580,49 @@ func TestFunction_OverwriteDesiredWithObservedOnApprovalRequired(t *testing.T) {
 		t.Fatal("expected response but got nil")
 	}
 
-	// Should have no error results
-	if len(rsp.GetResults()) > 0 {
-		t.Errorf("expected no results but got: %v", rsp.GetResults())
+	// Should have fatal results
+	if len(rsp.GetResults()) == 0 {
+		t.Fatal("expected fatal result but got none")
 	}
 
-	// Check that the desired composite resource was set to observed
-	dxr := rsp.GetDesired().GetComposite()
-	if dxr == nil {
-		t.Fatal("expected desired composite resource but was nil")
+	// Check for fatal result with approval message
+	hasFatalResult := false
+	for _, result := range rsp.GetResults() {
+		if result.GetSeverity() == fnv1.Severity_SEVERITY_FATAL {
+			hasFatalResult = true
+			message := result.GetMessage()
+			if !strings.Contains(message, "Changes detected. Approval required.") {
+				t.Errorf("expected fatal message to contain approval text but got: %v", message)
+			}
+		}
 	}
 
-	// Check that the composite spec was overwritten with observed data
-	resourceStruct := dxr.GetResource()
-	if resourceStruct == nil {
-		t.Fatal("resource struct is nil")
+	if !hasFatalResult {
+		t.Error("expected to find fatal result but didn't")
 	}
 
-	// Extract the "spec" field
-	specField, ok := resourceStruct.GetFields()["spec"]
-	if !ok {
-		t.Fatal("spec field not found in resource")
+	// Should also have ApprovalRequired condition
+	if len(rsp.GetConditions()) == 0 {
+		t.Fatal("expected at least one condition but got none")
 	}
 
-	// Get the resources field inside spec
-	resourcesField, ok := specField.GetStructValue().GetFields()["resources"]
-	if !ok {
-		t.Fatal("resources field not found in spec")
-	}
-
-	// Get the test field inside resources
-	testField, ok := resourcesField.GetStructValue().GetFields()["test"]
-	if !ok {
-		t.Fatal("test field not found in resources")
-	}
-
-	// Check if it has the old value
-	if testField.GetStringValue() != "old-data" {
-		t.Errorf("expected desired composite spec.resources.test to be overwritten with \"old-data\", got: %v",
-			testField.GetStringValue())
-	}
-
-	// Check that the desired resources were overwritten with observed resources
-	if len(rsp.GetDesired().GetResources()) != 1 {
-		t.Errorf("expected 1 desired resource, got: %d", len(rsp.GetDesired().GetResources()))
-	}
-
-	_, hasObserved := rsp.GetDesired().GetResources()["observed-resource"]
-	if !hasObserved {
-		t.Error("expected desired resources to contain observed-resource but didn't")
-	}
-
-	_, hasDesired := rsp.GetDesired().GetResources()["desired-resource"]
-	if hasDesired {
-		t.Error("expected desired resources not to contain desired-resource but it did")
-	}
-
-	// Should have the ApprovalRequired condition
+	// Check for the ApprovalRequired condition
 	hasApprovalRequired := false
 	for _, cond := range rsp.GetConditions() {
 		if cond.GetType() == "ApprovalRequired" {
 			hasApprovalRequired = true
-			break
+			if cond.GetStatus() != fnv1.Status_STATUS_CONDITION_FALSE {
+				t.Errorf("expected STATUS_CONDITION_FALSE for ApprovalRequired but got: %v", cond.GetStatus())
+			}
+			if cond.GetReason() != "WaitingForApproval" {
+				t.Errorf("expected WaitingForApproval reason but got: %v", cond.GetReason())
+			}
 		}
 	}
 
 	if !hasApprovalRequired {
 		t.Error("expected to find ApprovalRequired condition but didn't")
 	}
+
 }
+

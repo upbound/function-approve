@@ -130,17 +130,16 @@ func (f *Function) handleUnapprovedChanges(req *fnv1.RunFunctionRequest, in *v1b
 			"Approve this change by setting " + *in.ApprovalField + " to true"
 	}
 
-	// Changes detected and not approved, overwrite Desired State with Observed State
-	if err := f.overwriteDesiredWithObserved(req, rsp); err != nil {
-		return err
-	}
-
-	// Add ApprovalRequired condition for visibility
+	// Set custom ApprovalRequired condition for status/feedback
 	response.ConditionFalse(rsp, "ApprovalRequired", "WaitingForApproval").
 		WithMessage(detailedMsg).
 		TargetCompositeAndClaim()
 
-	f.log.Info("Preventing desired state changes until approval", "message", msg)
+	// Use response.Fatal to halt the pipeline execution
+	// This stops the composition process entirely until approval is granted
+	f.log.Info("Halting pipeline until changes are approved", "message", msg)
+	response.Fatal(rsp, errors.New(detailedMsg))
+
 	return nil
 }
 
@@ -608,61 +607,4 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 	return boolValue, nil
 }
 
-// overwriteDesiredWithObserved overwrites the desired state with the observed state to prevent changes
-func (f *Function) overwriteDesiredWithObserved(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
-	// For the unapproved case, we need to replace desired composed resources
-	// with observed composed resources, but we should not modify the composite resource itself
 
-	// Handle only composed resources, not the main XR
-	if err := f.overwriteComposedResources(req, rsp); err != nil {
-		return err
-	}
-
-	f.log.Info("Overwrote desired composed resources with observed ones until approval")
-	return nil
-}
-
-// overwriteComposedResources overwrites desired composed resources with observed ones
-func (f *Function) overwriteComposedResources(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) error {
-	// Only process if there are desired resources to overwrite
-	if len(req.GetDesired().GetResources()) == 0 {
-		return nil
-	}
-
-	// Get the observed composed resources directly using the SDK
-	observed, err := request.GetObservedComposedResources(req)
-	if err != nil {
-		f.log.Debug("Cannot get observed composed resources", "error", err)
-		// If we can't get composed resources, clear desired
-		rsp.Desired.Resources = make(map[string]*fnv1.Resource)
-		return nil
-	}
-
-	// Check if we have any observed resources
-	if len(observed) == 0 {
-		// No observed resources, clear desired
-		rsp.Desired.Resources = make(map[string]*fnv1.Resource)
-		return nil
-	}
-
-	// Create a new map for the desired resources
-	rsp.Desired.Resources = make(map[string]*fnv1.Resource)
-
-	// We need to use the original observed resources to get the correct proto type
-	observedResources := req.GetObserved().GetResources()
-
-	// Add all observed composed resources to the desired state
-	for name := range observed {
-		// Convert name to string for map lookup
-		key := string(name)
-
-		// Get the corresponding proto resource from observed resources
-		if res, ok := observedResources[key]; ok {
-			rsp.Desired.Resources[key] = res
-		}
-	}
-
-	// Log the number of composed resources we're preserving
-	f.log.Debug("Preserved composed resources from observed state", "count", len(rsp.GetDesired().GetResources()))
-	return nil
-}
