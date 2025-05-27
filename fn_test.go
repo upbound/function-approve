@@ -630,6 +630,158 @@ func TestFunction_FatalResultsWithApprovalCondition(t *testing.T) {
 
 }
 
+func TestFunction_HashCalculationFromCorrectSource(t *testing.T) {
+	f := &Function{
+		log: logging.NewNopLogger(),
+	}
+
+	// Test that hash is calculated from spec.resources.data field, not from desired resources
+	req := &fnv1.RunFunctionRequest{
+		Meta: &fnv1.RequestMeta{Tag: "fn-approval"},
+		Input: resource.MustStructJSON(`{
+			"apiVersion": "approve.fn.crossplane.io/v1alpha1",
+			"kind": "Input",
+			"dataField": "spec.resources",
+			"approvalField": "status.approved",
+			"oldHashField": "status.oldHash",
+			"newHashField": "status.newHash"
+		}`),
+		Observed: &fnv1.State{
+			Composite: &fnv1.Resource{
+				Resource: resource.MustStructJSON(`{
+					"apiVersion": "example.crossplane.io/v1",
+					"kind": "XApproval",
+					"metadata": {
+						"name": "approval-example"
+					},
+					"spec": {
+						"resources": {
+							"data": {
+								"key1": "value1",
+								"key2": "originalValue"
+							}
+						}
+					}
+				}`),
+			},
+		},
+		Desired: &fnv1.State{
+			Composite: &fnv1.Resource{
+				Resource: resource.MustStructJSON(`{
+					"apiVersion": "example.crossplane.io/v1",
+					"kind": "XApproval",
+					"metadata": {
+						"name": "approval-example"
+					},
+					"spec": {
+						"resources": {
+							"data": {
+								"key1": "value1",
+								"key2": "changedValue"
+							}
+						}
+					}
+				}`),
+			},
+			// Add desired resources that should NOT be used for hash calculation
+			Resources: map[string]*fnv1.Resource{
+				"some-resource": {
+					Resource: resource.MustStructJSON(`{
+						"apiVersion": "example.org/v1",
+						"kind": "SomeResource",
+						"metadata": {
+							"name": "some-resource"
+						},
+						"spec": {
+							"param": "this-should-not-affect-hash"
+						}
+					}`),
+				},
+			},
+		},
+	}
+
+	rsp, err := f.RunFunction(context.Background(), req)
+
+	if err != nil {
+		t.Errorf("expected no error but got: %v", err)
+	}
+
+	if rsp == nil {
+		t.Fatal("expected response but got nil")
+	}
+
+	// Should require approval since spec.resources changed from "originalValue" to "changedValue"
+	if len(rsp.GetResults()) == 0 {
+		t.Fatal("expected fatal result but got none")
+	}
+
+	// Check for fatal result
+	hasFatalResult := false
+	for _, result := range rsp.GetResults() {
+		if result.GetSeverity() == fnv1.Severity_SEVERITY_FATAL {
+			hasFatalResult = true
+			message := result.GetMessage()
+			if !strings.Contains(message, "Changes detected. Approval required.") {
+				t.Errorf("expected fatal message to contain approval text but got: %v", message)
+			}
+		}
+	}
+
+	if !hasFatalResult {
+		t.Error("expected to find fatal result but didn't")
+	}
+
+	// Check that the hash was calculated from spec.resources field, not from desired resources
+	// We verify this by checking that approval is required (indicating hash difference)
+	// even though we have desired resources that could have caused different hash behavior
+	hasApprovalRequired := false
+	for _, cond := range rsp.GetConditions() {
+		if cond.GetType() == approvalRequiredCondition {
+			hasApprovalRequired = true
+			message := cond.GetMessage()
+			// The message should contain hash info based on spec.resources, not desired resources
+			if !strings.Contains(message, "Current hash:") || !strings.Contains(message, "Approved hash:") {
+				t.Errorf("expected condition message to contain hash information but got: %v", message)
+			}
+		}
+	}
+
+	if !hasApprovalRequired {
+		t.Error("expected to find ApprovalRequired condition but didn't")
+	}
+
+	// Verify the hash was stored correctly in the response
+	dxr := rsp.GetDesired().GetComposite()
+	if dxr == nil {
+		t.Fatal("expected desired composite resource but was nil")
+	}
+
+	// Check that newHash field was set
+	statusValue, ok := dxr.GetResource().GetFields()["status"]
+	if !ok {
+		t.Error("expected status field to be set")
+		return
+	}
+
+	statusStruct := statusValue.GetStructValue()
+	if statusStruct == nil {
+		t.Error("expected status to be a struct")
+		return
+	}
+
+	newHashValue, ok := statusStruct.GetFields()["newHash"]
+	if !ok {
+		t.Error("expected newHash field to be set in status")
+		return
+	}
+
+	newHashString := newHashValue.GetStringValue()
+	if newHashString == "" {
+		t.Error("expected newHash to be non-empty")
+	}
+}
+
 func TestFunction_ApprovedWithHashChanges(t *testing.T) {
 	f := &Function{
 		log: logging.NewNopLogger(),

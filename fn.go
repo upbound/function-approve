@@ -397,15 +397,8 @@ func (f *Function) extractDataToHash(req *fnv1.RunFunctionRequest, in *v1beta1.I
 		return nil, err
 	}
 
-	// Extract from desired resources
-	// Check if desired composed resources exist first
-	if drs := req.GetDesired().GetResources(); len(drs) > 0 {
-		f.log.Debug("Calculating hash of desired composed resources")
-		return req.GetDesired().GetResources(), nil
-	}
-
-	// Fallback to specific field if desired resources aren't available
-	// Determine if we're looking in spec or status
+	// Always extract data from the specific field defined in DataField
+	// Parse the DataField to get section and field (e.g. "spec.resources" -> "spec", "resources")
 	parts := strings.SplitN(in.DataField, ".", 2)
 	if len(parts) != 2 {
 		response.Fatal(rsp, errors.Errorf("invalid DataField format: %s, expected section.field (e.g. spec.resources)", in.DataField))
@@ -413,6 +406,7 @@ func (f *Function) extractDataToHash(req *fnv1.RunFunctionRequest, in *v1beta1.I
 	}
 
 	section, field := parts[0], parts[1]
+	f.log.Debug("Calculating hash from field", "dataField", in.DataField, "section", section, "field", field)
 
 	var sectionData map[string]interface{}
 	if err := dxr.Resource.GetValueInto(section, &sectionData); err != nil {
