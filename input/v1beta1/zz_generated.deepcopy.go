@@ -13,11 +13,6 @@ func (in *Input) DeepCopyInto(out *Input) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	if in.HashAlgorithm != nil {
-		in, out := &in.HashAlgorithm, &out.HashAlgorithm
-		*out = new(string)
-		**out = **in
-	}
 	if in.ApprovalField != nil {
 		in, out := &in.ApprovalField, &out.ApprovalField
 		*out = new(string)

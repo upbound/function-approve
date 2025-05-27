@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
-	"hash"
 	"strings"
 
 	"github.com/upbound/function-approve/input/v1beta1"
@@ -159,11 +157,6 @@ func (f *Function) parseInput(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctio
 	}
 
 	// Set default values if not provided
-	if in.HashAlgorithm == nil {
-		defaultAlgo := "sha256"
-		in.HashAlgorithm = &defaultAlgo
-	}
-
 	if in.ApprovalField == nil {
 		defaultField := "status.approved"
 		in.ApprovalField = &defaultField
@@ -418,8 +411,8 @@ func (f *Function) extractDataToHash(req *fnv1.RunFunctionRequest, in *v1beta1.I
 	return data, nil
 }
 
-// calculateHash calculates hash for the given data using the specified algorithm
-func (f *Function) calculateHash(data interface{}, in *v1beta1.Input) string {
+// calculateHash calculates hash for the given data using SHA256
+func (f *Function) calculateHash(data interface{}, _ *v1beta1.Input) string {
 	// Create a JSON representation of the data
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -427,17 +420,8 @@ func (f *Function) calculateHash(data interface{}, in *v1beta1.Input) string {
 		return ""
 	}
 
-	// Choose hash algorithm
-	var h hash.Hash
-	switch *in.HashAlgorithm {
-	case "sha512":
-		h = sha512.New()
-	default:
-		// Default to sha256
-		h = sha256.New()
-	}
-
-	// Calculate hash
+	// Calculate SHA256 hash
+	h := sha256.New()
 	h.Write(jsonData)
 	return hex.EncodeToString(h.Sum(nil))
 }

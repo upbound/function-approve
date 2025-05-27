@@ -64,7 +64,6 @@ spec:
 | Field | Type | Description |
 |-------|------|-------------|
 | `dataField` | string | **Required**. Field to monitor for changes (e.g., `spec.resources`) |
-| `hashAlgorithm` | string | Algorithm to use for hash calculation. Supported values: `md5`, `sha256`, `sha512`. Default: `sha256` |
 | `approvalField` | string | Status field to check for approval. Default: `status.approved` |
 | `currentHashField` | string | Status field to store the approved hash. Default: `status.currentHash` |
 | `detailedCondition` | bool | Whether to add detailed information to conditions. Default: `true` |
@@ -172,7 +171,6 @@ spec:
       kind: Input
       dataField: "spec.resources"
       approvalField: "status.approved"
-      hashAlgorithm: "sha256"
       currentHashField: "status.currentHash"
       detailedCondition: true
       approvalMessage: "Cluster changes require admin approval"

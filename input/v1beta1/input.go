@@ -23,12 +23,6 @@ type Input struct {
 	// For example: "spec.resources"
 	DataField string `json:"dataField"`
 
-	// HashAlgorithm defines which hash algorithm to use for calculating hashes
-	// Supported values: "md5", "sha256", "sha512"
-	// Default is "sha256"
-	// +optional
-	HashAlgorithm *string `json:"hashAlgorithm,omitempty"`
-
 	// ApprovalField defines the status field to check for the approval decision
 	// Default is "status.approved"
 	// +optional
