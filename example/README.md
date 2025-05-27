@@ -21,23 +21,15 @@ The function works by:
 
 ## Running the Examples
 
-### Basic Example with Pause Annotation
+### Running the Example
 
-The default behavior uses the `crossplane.io/paused` annotation to pause reconciliation:
-
-```shell
-crossplane render xr.yaml composition.yaml functions.yaml
-```
-
-### Example with Synced=False Condition
-
-This alternative approach uses the Synced=False condition instead of the pause annotation:
+Render the example to see how the approval function works:
 
 ```shell
 crossplane render xr.yaml composition.yaml functions.yaml
 ```
 
-The `setSyncedFalse: true` option in the composition enables this behavior.
+The function will detect changes and require approval before allowing the pipeline to continue.
 
 ## Configuration Options
 
@@ -45,37 +37,32 @@ The function supports these configuration options:
 
 - `dataField`: Specifies which field to monitor for changes (required)
 - `approvalField`: Status field to check for approval (default: "status.approved")
-- `oldHashField`: Where to store the approved hash (default: "status.oldHash")
-- `newHashField`: Where to store the current hash (default: "status.newHash")
-- `pauseAnnotation`: Annotation used to pause reconciliation (default: "crossplane.io/paused")
+- `currentHashField`: Where to store the approved hash (default: "status.currentHash")
 - `detailedCondition`: Whether to include hash details in conditions (default: true)
 - `approvalMessage`: Custom message for approval required condition
-- `setSyncedFalse`: Use Synced=False condition instead of pause annotation (default: false)
 
 ## Approval Workflow
 
 1. Make changes to the resource's spec
-2. The function detects changes and pauses reconciliation
-3. Review the changes through the resource's conditions
+2. The function detects changes and halts the pipeline execution
+3. Review the changes through the resource's conditions and fatal results
 4. Set the approval field (default: `status.approved: true`)
-5. The function detects approval and resumes reconciliation
+5. The function detects approval and allows the pipeline to continue
+6. The `currentHash` is updated to reflect the newly approved state
 
-## Example With setSyncedFalse
+## Example Configuration
 
-In some environments, it may be preferable to use Synced=False condition instead of annotations.
-The `setSyncedFalse: true` option enables this alternative approach:
+Here's a typical function configuration:
 
 ```yaml
 apiVersion: approve.fn.crossplane.io/v1alpha1
 kind: Input
 dataField: "spec.resources"
 approvalField: "status.approved"
-newHashField: "status.newHash"
-oldHashField: "status.oldHash"
+currentHashField: "status.currentHash"
 detailedCondition: true
 approvalMessage: "Changes detected. Administrative approval required."
-setSyncedFalse: true
 ```
 
-When enabled, this sets the Synced condition to False instead of adding the pause annotation,
-providing the same pause functionality through a different mechanism.
+The function uses a fatal result approach to halt pipeline execution when approval is required,
+ensuring that no changes are applied until explicitly approved.

@@ -23,13 +23,8 @@ func (in *Input) DeepCopyInto(out *Input) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.OldHashField != nil {
-		in, out := &in.OldHashField, &out.OldHashField
-		*out = new(string)
-		**out = **in
-	}
-	if in.NewHashField != nil {
-		in, out := &in.NewHashField, &out.NewHashField
+	if in.CurrentHashField != nil {
+		in, out := &in.CurrentHashField, &out.CurrentHashField
 		*out = new(string)
 		**out = **in
 	}

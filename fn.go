@@ -39,14 +39,14 @@ func (f *Function) RunFunction(_ context.Context, req *fnv1.RunFunctionRequest) 
 	}
 
 	// Process hashing logic and get approval status
-	newHash, oldHash, approved, err := f.processHashingAndApproval(req, in, rsp)
+	newHash, currentHash, approved, err := f.processHashingAndApproval(req, in, rsp)
 	if err != nil {
 		return rsp, nil //nolint:nilerr // errors are handled in rsp
 	}
 
 	// Check if changes need approval
-	if f.needsApproval(approved, oldHash, newHash) {
-		f.handleUnapprovedChanges(req, in, rsp, oldHash, newHash)
+	if f.needsApproval(approved, currentHash, newHash) {
+		f.handleUnapprovedChanges(req, in, rsp, currentHash, newHash)
 		return rsp, nil
 	}
 
@@ -76,7 +76,7 @@ func (f *Function) initializeFunction(req *fnv1.RunFunctionRequest, rsp *fnv1.Ru
 }
 
 // processHashingAndApproval handles hash computation and approval checks
-func (f *Function) processHashingAndApproval(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) (newHash, oldHash string, approved bool, err error) {
+func (f *Function) processHashingAndApproval(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) (newHash, currentHash string, approved bool, err error) {
 	// Extract data to hash
 	dataToHash, err := f.extractDataToHash(req, in, rsp)
 	if err != nil {
@@ -86,14 +86,9 @@ func (f *Function) processHashingAndApproval(req *fnv1.RunFunctionRequest, in *v
 	// Calculate hash
 	newHash = f.calculateHash(dataToHash, in)
 
-	// Get old hash from status
-	oldHash, err = f.getOldHash(req, in, rsp)
+	// Get current hash from status (the previously approved hash)
+	currentHash, err = f.getCurrentHash(req, in, rsp)
 	if err != nil {
-		return "", "", false, err
-	}
-
-	// Save new hash to status
-	if err := f.saveNewHash(req, in, newHash, rsp); err != nil {
 		return "", "", false, err
 	}
 
@@ -103,17 +98,17 @@ func (f *Function) processHashingAndApproval(req *fnv1.RunFunctionRequest, in *v
 		return "", "", false, err
 	}
 
-	return newHash, oldHash, approved, nil
+	return newHash, currentHash, approved, nil
 }
 
 // needsApproval determines if the changes require approval
-func (f *Function) needsApproval(approved bool, oldHash, newHash string) bool {
+func (f *Function) needsApproval(approved bool, currentHash, newHash string) bool {
 	// Only require approval if not approved AND there are changes
-	return !approved && (oldHash == "" || oldHash != newHash)
+	return !approved && (currentHash == "" || currentHash != newHash)
 }
 
 // handleUnapprovedChanges processes the case where changes need approval
-func (f *Function) handleUnapprovedChanges(_ *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, oldHash, newHash string) {
+func (f *Function) handleUnapprovedChanges(_ *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, currentHash, newHash string) {
 	// Set condition to show approval is needed
 	msg := "Changes detected. Approval required."
 	if in.ApprovalMessage != nil {
@@ -124,7 +119,7 @@ func (f *Function) handleUnapprovedChanges(_ *fnv1.RunFunctionRequest, in *v1bet
 	if in.DetailedCondition != nil && *in.DetailedCondition {
 		// Add detailed information about what changed and what needs approval
 		detailedMsg = msg + "\nCurrent hash: " + newHash + "\n" +
-			"Approved hash: " + oldHash + "\n" +
+			"Approved hash: " + currentHash + "\n" +
 			"Approve this change by setting " + *in.ApprovalField + " to true"
 	}
 
@@ -142,8 +137,8 @@ func (f *Function) handleUnapprovedChanges(_ *fnv1.RunFunctionRequest, in *v1bet
 // handleApprovedChanges processes the case where changes are approved
 func (f *Function) handleApprovedChanges(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, newHash string) error {
 	// If we got here, the changes are approved or there are no changes
-	// Update the old hash with the new hash
-	if err := f.saveOldHash(req, in, newHash, rsp); err != nil {
+	// Update the current hash to the new hash
+	if err := f.saveCurrentHash(req, in, newHash, rsp); err != nil {
 		return err
 	}
 
@@ -174,14 +169,9 @@ func (f *Function) parseInput(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctio
 		in.ApprovalField = &defaultField
 	}
 
-	if in.OldHashField == nil {
-		defaultField := "status.oldHash"
-		in.OldHashField = &defaultField
-	}
-
-	if in.NewHashField == nil {
-		defaultField := "status.newHash"
-		in.NewHashField = &defaultField
+	if in.CurrentHashField == nil {
+		defaultField := "status.currentHash"
+		in.CurrentHashField = &defaultField
 	}
 
 	if in.DetailedCondition == nil {
@@ -452,8 +442,8 @@ func (f *Function) calculateHash(data interface{}, in *v1beta1.Input) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// getOldHash retrieves the previously approved hash
-func (f *Function) getOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) (string, error) {
+// getCurrentHash retrieves the currently approved hash
+func (f *Function) getCurrentHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse) (string, error) {
 	xrStatus, _, err := f.getXRAndStatus(req)
 	if err != nil {
 		response.Fatal(rsp, err)
@@ -461,12 +451,12 @@ func (f *Function) getOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, r
 	}
 
 	// Remove status. prefix if present
-	hashField := strings.TrimPrefix(*in.OldHashField, "status.")
+	hashField := strings.TrimPrefix(*in.CurrentHashField, "status.")
 
-	// Get the old hash from status
+	// Get the current hash from status
 	value, exists, err := GetNestedValue(xrStatus, hashField)
 	if err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "error accessing old hash field %s", hashField))
+		response.Fatal(rsp, errors.Wrapf(err, "error accessing current hash field %s", hashField))
 		return "", err
 	}
 
@@ -477,47 +467,15 @@ func (f *Function) getOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, r
 
 	strValue, ok := value.(string)
 	if !ok {
-		response.Fatal(rsp, errors.Errorf("old hash field %s is not a string", hashField))
-		return "", errors.New("old hash field is not a string")
+		response.Fatal(rsp, errors.Errorf("current hash field %s is not a string", hashField))
+		return "", errors.New("current hash field is not a string")
 	}
 
 	return strValue, nil
 }
 
-// saveNewHash saves the new hash to the status
-func (f *Function) saveNewHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, hash string, rsp *fnv1.RunFunctionResponse) error {
-	xrStatus, dxr, err := f.getXRAndStatus(req)
-	if err != nil {
-		response.Fatal(rsp, err)
-		return err
-	}
-
-	// Remove status. prefix if present
-	hashField := strings.TrimPrefix(*in.NewHashField, "status.")
-
-	// Set the new hash in status
-	if err := SetNestedValue(xrStatus, hashField, hash); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set new hash field %s", hashField))
-		return err
-	}
-
-	// Write updated status back to dxr
-	if err := dxr.Resource.SetValue("status", xrStatus); err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot write updated status back into composite resource"))
-		return err
-	}
-
-	// Save the updated desired composite resource
-	if err := response.SetDesiredCompositeResource(rsp, dxr); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set desired composite resource in %T", rsp))
-		return err
-	}
-
-	return nil
-}
-
-// saveOldHash updates the old hash with the new hash after approval
-func (f *Function) saveOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, hash string, rsp *fnv1.RunFunctionResponse) error {
+// saveCurrentHash updates the current hash with the new hash after approval
+func (f *Function) saveCurrentHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, hash string, rsp *fnv1.RunFunctionResponse) error {
 	// For the status update, we need to access the composite resource in the desired state
 	// that we'll be passing through later
 	dxr, err := request.GetDesiredCompositeResource(req)
@@ -535,11 +493,11 @@ func (f *Function) saveOldHash(req *fnv1.RunFunctionRequest, in *v1beta1.Input, 
 	}
 
 	// Remove status. prefix if present
-	hashField := strings.TrimPrefix(*in.OldHashField, "status.")
+	hashField := strings.TrimPrefix(*in.CurrentHashField, "status.")
 
-	// Set the old hash in status
+	// Set the current hash in status
 	if err := SetNestedValue(xrStatus, hashField, hash); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot set old hash field %s", hashField))
+		response.Fatal(rsp, errors.Wrapf(err, "cannot set current hash field %s", hashField))
 		return err
 	}
 

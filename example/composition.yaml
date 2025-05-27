@@ -35,7 +35,6 @@ spec:
       kind: Input
       dataField: "spec.resources"
       approvalField: "status.approved"
-      newHashField: "status.newHash"
-      oldHashField: "status.oldHash"
+      currentHashField: "status.currentHash"
       detailedCondition: true
       approvalMessage: "Changes detected. Administrative approval required."

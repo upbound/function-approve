@@ -34,15 +34,10 @@ type Input struct {
 	// +optional
 	ApprovalField *string `json:"approvalField,omitempty"`
 
-	// OldHashField defines where to store the previous (approved) hash value
-	// Default is "status.oldHash"
+	// CurrentHashField defines where to store the current approved hash value
+	// Default is "status.currentHash"
 	// +optional
-	OldHashField *string `json:"oldHashField,omitempty"`
-
-	// NewHashField defines where to store the current hash value
-	// Default is "status.newHash"
-	// +optional
-	NewHashField *string `json:"newHashField,omitempty"`
+	CurrentHashField *string `json:"currentHashField,omitempty"`
 
 	// DetailedCondition adds a detailed condition about approval status
 	// Default is true

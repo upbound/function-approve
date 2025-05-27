@@ -14,4 +14,4 @@ spec:
         environment: development
 status:
   approved: true
-  oldHash: 2ce2TEST269e18bfb1c
+  currentHash: c48da99a2611a5c0ee7fcdf769a14307a2fbf4c6ec160f945c5837a0b5fc75bd

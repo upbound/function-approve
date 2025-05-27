@@ -71,8 +71,7 @@ func TestFunction_FirstRunNeedsApproval(t *testing.T) {
 			"kind": "Input",
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
-			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash",
+			"currentHashField": "status.currentHash",
 			"detailedCondition": true
 		}`),
 		Observed: &fnv1.State{
@@ -178,8 +177,7 @@ func TestFunction_AlreadyApproved(t *testing.T) {
 			"kind": "Input",
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
-			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash"
+			"currentHashField": "status.currentHash"
 		}`),
 		Observed: &fnv1.State{
 			Composite: &fnv1.Resource{
@@ -196,7 +194,7 @@ func TestFunction_AlreadyApproved(t *testing.T) {
 					},
 					"status": {
 						"approved": true,
-						"newHash": "` + hashValue + `"
+						"currentHash": "` + hashValue + `"
 					}
 				}`),
 			},
@@ -216,7 +214,7 @@ func TestFunction_AlreadyApproved(t *testing.T) {
 					},
 					"status": {
 						"approved": true,
-						"newHash": "` + hashValue + `"
+						"currentHash": "` + hashValue + `"
 					}
 				}`),
 			},
@@ -276,8 +274,7 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 			"kind": "Input",
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
-			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash"
+			"currentHashField": "status.currentHash"
 		}`),
 		Observed: &fnv1.State{
 			Composite: &fnv1.Resource{
@@ -294,7 +291,7 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 					},
 					"status": {
 						"approved": false,
-						"oldHash": "` + oldHash + `"
+						"currentHash": "` + oldHash + `"
 					}
 				}`),
 			},
@@ -314,7 +311,7 @@ func TestFunction_ChangesRequireApproval(t *testing.T) {
 					},
 					"status": {
 						"approved": false,
-						"oldHash": "` + oldHash + `"
+						"currentHash": "` + oldHash + `"
 					}
 				}`),
 			},
@@ -390,8 +387,7 @@ func TestFunction_DesiredResources(t *testing.T) {
 			"kind": "Input",
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
-			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash"
+			"currentHashField": "status.currentHash"
 		}`),
 		Observed: &fnv1.State{
 			Composite: &fnv1.Resource{
@@ -408,7 +404,7 @@ func TestFunction_DesiredResources(t *testing.T) {
 					},
 					"status": {
 						"approved": false,
-						"oldHash": "` + oldHash + `"
+						"currentHash": "` + oldHash + `"
 					}
 				}`),
 			},
@@ -428,7 +424,7 @@ func TestFunction_DesiredResources(t *testing.T) {
 					},
 					"status": {
 						"approved": false,
-						"oldHash": "` + oldHash + `"
+						"currentHash": "` + oldHash + `"
 					}
 				}`),
 			},
@@ -536,8 +532,7 @@ func TestFunction_FatalResultsWithApprovalCondition(t *testing.T) {
 			"kind": "Input",
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
-			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash",
+			"currentHashField": "status.currentHash",
 			"detailedCondition": true
 		}`),
 		Observed: &fnv1.State{
@@ -643,8 +638,7 @@ func TestFunction_HashCalculationFromCorrectSource(t *testing.T) {
 			"kind": "Input",
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
-			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash"
+			"currentHashField": "status.currentHash"
 		}`),
 		Observed: &fnv1.State{
 			Composite: &fnv1.Resource{
@@ -751,35 +745,8 @@ func TestFunction_HashCalculationFromCorrectSource(t *testing.T) {
 		t.Error("expected to find ApprovalRequired condition but didn't")
 	}
 
-	// Verify the hash was stored correctly in the response
-	dxr := rsp.GetDesired().GetComposite()
-	if dxr == nil {
-		t.Fatal("expected desired composite resource but was nil")
-	}
-
-	// Check that newHash field was set
-	statusValue, ok := dxr.GetResource().GetFields()["status"]
-	if !ok {
-		t.Error("expected status field to be set")
-		return
-	}
-
-	statusStruct := statusValue.GetStructValue()
-	if statusStruct == nil {
-		t.Error("expected status to be a struct")
-		return
-	}
-
-	newHashValue, ok := statusStruct.GetFields()["newHash"]
-	if !ok {
-		t.Error("expected newHash field to be set in status")
-		return
-	}
-
-	newHashString := newHashValue.GetStringValue()
-	if newHashString == "" {
-		t.Error("expected newHash to be non-empty")
-	}
+	// Note: For unapproved changes, the currentHash field is not updated
+	// It only gets updated when changes are approved
 }
 
 func TestFunction_ApprovedWithHashChanges(t *testing.T) {
@@ -789,7 +756,7 @@ func TestFunction_ApprovedWithHashChanges(t *testing.T) {
 
 	// This test simulates the exact scenario from the real environment:
 	// - status.approved = true
-	// - oldHash != newHash (there are changes)
+	// - currentHash != newHash (there are changes)
 	// - Should NOT require approval since user already approved
 
 	const approvedHash = "559b7f636dcd75c3dfa6449f7aaa060fd8a52fc7d70f74792feb04930fa2c400"
@@ -801,8 +768,7 @@ func TestFunction_ApprovedWithHashChanges(t *testing.T) {
 			"kind": "Input",
 			"dataField": "spec.resources",
 			"approvalField": "status.approved",
-			"oldHashField": "status.oldHash",
-			"newHashField": "status.newHash"
+			"currentHashField": "status.currentHash"
 		}`),
 		Observed: &fnv1.State{
 			Composite: &fnv1.Resource{

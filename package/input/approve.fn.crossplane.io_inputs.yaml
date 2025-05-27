@@ -38,6 +38,11 @@ spec:
               ApprovalMessage sets a message to display when approval is required
               Default is "Changes detected. Approval required."
             type: string
+          currentHashField:
+            description: |-
+              CurrentHashField defines where to store the current approved hash value
+              Default is "status.currentHash"
+            type: string
           dataField:
             description: |-
               DataField defines the object field to hash and store for tracking changes
@@ -64,16 +69,6 @@ spec:
             type: string
           metadata:
             type: object
-          newHashField:
-            description: |-
-              NewHashField defines where to store the current hash value
-              Default is "status.newHash"
-            type: string
-          oldHashField:
-            description: |-
-              OldHashField defines where to store the previous (approved) hash value
-              Default is "status.oldHash"
-            type: string
         required:
         - dataField
         type: object

@@ -7,11 +7,11 @@ A Crossplane Composition Function for implementing manual approval workflows.
 The `function-approve` provides a serverless approval mechanism at the Crossplane level that:
 
 1. Tracks changes to a specified field by computing a hash
-2. When changes need approval, overwrites Desired state with Observed state to prevent changes
+2. When changes need approval, uses fatal results to halt pipeline execution
 3. Requires explicit approval before allowing changes to proceed
 4. Prevents drift by storing previously approved state
 
-This function implements the approval workflow using entirely Crossplane-native mechanisms without external dependencies, making it lightweight and reliable.
+This function implements the approval workflow using Crossplane's fatal result mechanism, ensuring that no changes are applied until explicitly approved.
 
 ## Usage
 
@@ -29,10 +29,10 @@ spec:
 ### How It Works
 
 1. When a resource is created or updated, `function-approve` calculates a hash of the monitored field (e.g., `spec.resources`).
-2. The function stores this hash in `status.newHash` (or specified field).
-3. If there's a previous approved hash (`status.oldHash`) and it doesn't match the new hash, the function replaces Desired state with Observed state.
+2. The function compares this hash with the previously approved hash stored in `status.currentHash`.
+3. If the hashes don't match and approval is not granted, the function returns a fatal result to halt pipeline execution.
 4. An operator must approve the change by setting `status.approved = true`.
-5. After approval, the new hash is stored as the approved hash, the approval flag is reset, and changes are allowed to proceed.
+5. After approval, the new hash is stored as `currentHash`, the approval flag is reset, and changes are allowed to proceed.
 6. If a customer modifies an existing claim after approval, this will generate a new hash, requiring another approval.
 
 ## Example
@@ -55,9 +55,7 @@ spec:
       kind: Input
       dataField: "spec.resources"  # Field to monitor for changes
       approvalField: "status.approved"
-      newHashField: "status.newHash"
-      oldHashField: "status.oldHash"
-      pauseAnnotation: "crossplane.io/paused"
+      currentHashField: "status.currentHash"
       detailedCondition: true
 ```
 
@@ -68,8 +66,7 @@ spec:
 | `dataField` | string | **Required**. Field to monitor for changes (e.g., `spec.resources`) |
 | `hashAlgorithm` | string | Algorithm to use for hash calculation. Supported values: `md5`, `sha256`, `sha512`. Default: `sha256` |
 | `approvalField` | string | Status field to check for approval. Default: `status.approved` |
-| `oldHashField` | string | Status field to store previously approved hash. Default: `status.oldHash` |
-| `newHashField` | string | Status field to store current hash. Default: `status.newHash` |
+| `currentHashField` | string | Status field to store the approved hash. Default: `status.currentHash` |
 | `detailedCondition` | bool | Whether to add detailed information to conditions. Default: `true` |
 | `approvalMessage` | string | Message to display when approval is required. Default: `Changes detected. Approval required.` |
 
@@ -107,32 +104,30 @@ spec:
               approved:
                 type: boolean
                 description: "Whether the current changes are approved"
-              oldHash:
+              currentHash:
                 type: string
-                description: "Hash of previously approved resource state"
-              newHash:
-                type: string
-                description: "Hash of current resource state"
+                description: "Hash of the currently approved resource state"
 ```
 
 ## Approving Changes
 
-When changes are detected, the Desired state is replaced with Observed state (preventing any changes from being applied), and the resource will show an `ApprovalRequired` condition. To approve the changes, patch the resource's status:
+When changes are detected, the function returns a fatal result (halting pipeline execution) and the resource will show an `ApprovalRequired` condition. To approve the changes, patch the resource's status:
 
 ```yaml
 kubectl patch xapproval example --type=merge --subresource=status -p '{"status":{"approved":true}}'
 ```
 
 After approval, the function will:
-1. Record the new state as the approved state
-2. Allow the changes to proceed normally without overwriting the Desired state
+1. Update `currentHash` to the new approved hash
+2. Reset the approval flag to `false`
+3. Allow the pipeline to continue normally
 
 ## Resetting Approval State
 
-If you need to reset the approval state, you can clear the `oldHash` field:
+If you need to reset the approval state, you can clear the `currentHash` field:
 
 ```yaml
-kubectl patch xapproval example --type=merge --subresource=status -p '{"status":{"oldHash":""}}'
+kubectl patch xapproval example --type=merge --subresource=status -p '{"status":{"currentHash":""}}'
 ```
 
 ## Security Considerations
@@ -142,19 +137,18 @@ kubectl patch xapproval example --type=merge --subresource=status -p '{"status":
 
 ## How Changes Are Prevented
 
-The function uses a direct approach to prevent changes when approval is required:
+The function uses fatal results to prevent changes when approval is required:
 
 1. When changes are detected but not yet approved, the function:
-   - Replaces the Desired composite resource with the Observed resource
-   - Replaces any Desired composed resources with the Observed resources
+   - Returns a fatal result to halt pipeline execution
    - Sets an ApprovalRequired condition for visibility
+   - Provides detailed information about the required approval
 
 2. This approach has several benefits:
-   - Deterministic behavior - changes are physically prevented
-   - No reliance on pause annotations or condition interpretation by the reconciler
+   - Deterministic behavior - pipeline execution is completely stopped
+   - Clear error messaging to operators about required approvals
    - Works consistently across different Crossplane versions
-   - Clear separation of approval status and reconciliation mechanics
-   - Carefully preserves required metadata fields to avoid e2e testing issues
+   - Clean separation between approval logic and resource state
 
 ## Complete Example
 
@@ -179,8 +173,7 @@ spec:
       dataField: "spec.resources"
       approvalField: "status.approved"
       hashAlgorithm: "sha256"
-      newHashField: "status.currentHash"
-      oldHashField: "status.approvedHash"
+      currentHashField: "status.currentHash"
       detailedCondition: true
       approvalMessage: "Cluster changes require admin approval"
   - step: create-resources
