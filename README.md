@@ -47,6 +47,17 @@ spec:
     apiVersion: example.crossplane.io/v1
     kind: XR
   pipeline:
+  - step: render-resources
+    functionRef:
+      name: function-patch-and-transform
+    input:
+      apiVersion: pt.fn.crossplane.io/v1beta1
+      kind: Resources
+      resources:
+      - name: example-resource
+        base:
+          apiVersion: example.com/v1
+          kind: SomeResource
   - step: require-approval
     functionRef:
       name: function-approve
@@ -163,17 +174,6 @@ spec:
     apiVersion: example.crossplane.io/v1
     kind: XCluster
   pipeline:
-  - step: require-approval
-    functionRef:
-      name: function-approve
-    input:
-      apiVersion: approve.fn.crossplane.io/v1alpha1
-      kind: Input
-      dataField: "spec.resources"
-      approvalField: "status.approved"
-      currentHashField: "status.currentHash"
-      detailedCondition: true
-      approvalMessage: "Cluster changes require admin approval"
   - step: create-resources
     functionRef:
       name: function-patch-and-transform
@@ -189,6 +189,17 @@ spec:
             forProvider:
               region: us-west-2
               version: "1.25"
+  - step: require-approval
+    functionRef:
+      name: function-approve
+    input:
+      apiVersion: approve.fn.crossplane.io/v1alpha1
+      kind: Input
+      dataField: "spec.resources"
+      approvalField: "status.approved"
+      currentHashField: "status.currentHash"
+      detailedCondition: true
+      approvalMessage: "Cluster changes require admin approval"
 ```
 
 ## Metrics and Monitoring
