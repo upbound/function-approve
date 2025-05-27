@@ -625,3 +625,120 @@ func TestFunction_FatalResultsWithApprovalCondition(t *testing.T) {
 	}
 
 }
+
+func TestFunction_ApprovedWithHashChanges(t *testing.T) {
+	f := &Function{
+		log: logging.NewNopLogger(),
+	}
+
+	// This test simulates the exact scenario from the real environment:
+	// - status.approved = true
+	// - oldHash != newHash (there are changes)
+	// - Should NOT require approval since user already approved
+	
+	const approvedHash = "559b7f636dcd75c3dfa6449f7aaa060fd8a52fc7d70f74792feb04930fa2c400"
+	const currentHash = "3c1b7ae0305b9a7f37d1994c471a231c8944f91895e738fd80e1fdf4bf525cb6"
+
+	req := &fnv1.RunFunctionRequest{
+		Meta: &fnv1.RequestMeta{Tag: "fn-approval"},
+		Input: resource.MustStructJSON(`{
+			"apiVersion": "approve.fn.crossplane.io/v1alpha1",
+			"kind": "Input",
+			"dataField": "spec.resources",
+			"approvalField": "status.approved",
+			"oldHashField": "status.oldHash",
+			"newHashField": "status.newHash"
+		}`),
+		Observed: &fnv1.State{
+			Composite: &fnv1.Resource{
+				Resource: resource.MustStructJSON(`{
+					"apiVersion": "example.crossplane.io/v1",
+					"kind": "XApproval",
+					"metadata": {
+						"name": "approval-example"
+					},
+					"spec": {
+						"resources": {
+							"data": {
+								"key1": "value1",
+								"key2": "testApproval4"
+							}
+						}
+					},
+					"status": {
+						"approved": true,
+						"oldHash": "` + approvedHash + `"
+					}
+				}`),
+			},
+		},
+		Desired: &fnv1.State{
+			Composite: &fnv1.Resource{
+				Resource: resource.MustStructJSON(`{
+					"apiVersion": "example.crossplane.io/v1",
+					"kind": "XApproval",
+					"metadata": {
+						"name": "approval-example"
+					},
+					"spec": {
+						"resources": {
+							"data": {
+								"key1": "value1",
+								"key2": "newChangedValue"
+							}
+						}
+					},
+					"status": {
+						"approved": true,
+						"oldHash": "` + approvedHash + `"
+					}
+				}`),
+			},
+		},
+	}
+
+	rsp, err := f.RunFunction(context.Background(), req)
+
+	if err != nil {
+		t.Errorf("expected no error but got: %v", err)
+	}
+
+	if rsp == nil {
+		t.Fatal("expected response but got nil")
+	}
+
+	// Should have NO fatal results since changes are approved
+	if len(rsp.GetResults()) > 0 {
+		t.Errorf("expected no results when approved=true but got: %v", rsp.GetResults())
+	}
+
+	// Should have a success condition
+	if len(rsp.GetConditions()) == 0 {
+		t.Fatal("expected at least one condition but got none")
+	}
+
+	// Check for the FunctionSuccess condition
+	hasFunctionSuccess := false
+	for _, cond := range rsp.GetConditions() {
+		if cond.GetType() == "FunctionSuccess" {
+			hasFunctionSuccess = true
+			if cond.GetStatus() != fnv1.Status_STATUS_CONDITION_TRUE {
+				t.Errorf("expected STATUS_CONDITION_TRUE for FunctionSuccess but got: %v", cond.GetStatus())
+			}
+			if cond.GetReason() != "Success" {
+				t.Errorf("expected Success reason but got: %v", cond.GetReason())
+			}
+		}
+	}
+
+	if !hasFunctionSuccess {
+		t.Error("expected to find FunctionSuccess condition but didn't")
+	}
+
+	// Should NOT have ApprovalRequired condition when approved=true
+	for _, cond := range rsp.GetConditions() {
+		if cond.GetType() == "ApprovalRequired" {
+			t.Errorf("should not have ApprovalRequired condition when approved=true but found: %v", cond)
+		}
+	}
+}

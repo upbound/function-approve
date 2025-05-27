@@ -108,7 +108,8 @@ func (f *Function) processHashingAndApproval(req *fnv1.RunFunctionRequest, in *v
 
 // needsApproval determines if the changes require approval
 func (f *Function) needsApproval(approved bool, oldHash, newHash string) bool {
-	return !approved || (oldHash != "" && oldHash != newHash)
+	// Only require approval if not approved AND there are changes
+	return !approved && (oldHash == "" || oldHash != newHash)
 }
 
 // handleUnapprovedChanges processes the case where changes need approval
