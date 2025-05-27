@@ -625,4 +625,3 @@ func TestFunction_FatalResultsWithApprovalCondition(t *testing.T) {
 	}
 
 }
-

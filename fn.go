@@ -46,10 +46,7 @@ func (f *Function) RunFunction(_ context.Context, req *fnv1.RunFunctionRequest) 
 
 	// Check if changes need approval
 	if f.needsApproval(approved, oldHash, newHash) {
-		err := f.handleUnapprovedChanges(req, in, rsp, oldHash, newHash)
-		if err != nil {
-			return rsp, nil //nolint:nilerr // errors are handled in rsp
-		}
+		f.handleUnapprovedChanges(req, in, rsp, oldHash, newHash)
 		return rsp, nil
 	}
 
@@ -115,7 +112,7 @@ func (f *Function) needsApproval(approved bool, oldHash, newHash string) bool {
 }
 
 // handleUnapprovedChanges processes the case where changes need approval
-func (f *Function) handleUnapprovedChanges(req *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, oldHash, newHash string) error {
+func (f *Function) handleUnapprovedChanges(_ *fnv1.RunFunctionRequest, in *v1beta1.Input, rsp *fnv1.RunFunctionResponse, oldHash, newHash string) {
 	// Set condition to show approval is needed
 	msg := "Changes detected. Approval required."
 	if in.ApprovalMessage != nil {
@@ -139,8 +136,6 @@ func (f *Function) handleUnapprovedChanges(req *fnv1.RunFunctionRequest, in *v1b
 	// This stops the composition process entirely until approval is granted
 	f.log.Info("Halting pipeline until changes are approved", "message", msg)
 	response.Fatal(rsp, errors.New(detailedMsg))
-
-	return nil
 }
 
 // handleApprovedChanges processes the case where changes are approved
@@ -606,5 +601,3 @@ func (f *Function) checkApprovalStatus(req *fnv1.RunFunctionRequest, in *v1beta1
 
 	return boolValue, nil
 }
-
-
