@@ -2,7 +2,7 @@ module github.com/upbound/function-approve
 
 go 1.24.0
 
-toolchain go1.24.3
+toolchain go1.24.5
 
 require (
 	github.com/alecthomas/kong v1.11.0
