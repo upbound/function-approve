@@ -6,7 +6,7 @@ toolchain go1.24.5
 
 require (
 	github.com/alecthomas/kong v1.12.0
-	github.com/crossplane/crossplane-runtime v1.19.0
+	github.com/crossplane/crossplane-runtime v1.20.0
 	github.com/crossplane/function-sdk-go v0.4.0
 	k8s.io/apimachinery v0.33.3
 	sigs.k8s.io/controller-tools v0.18.0
