@@ -8,7 +8,7 @@ require (
 	github.com/alecthomas/kong v1.12.1
 	github.com/crossplane/crossplane-runtime v1.20.0
 	github.com/crossplane/function-sdk-go v0.4.0
-	k8s.io/apimachinery v0.34.0
+	k8s.io/apimachinery v0.34.1
 	sigs.k8s.io/controller-tools v0.19.0
 )
 
