@@ -3,7 +3,7 @@ module github.com/upbound/function-approve
 go 1.25.5
 
 require (
-	github.com/alecthomas/kong v1.13.0
+	github.com/alecthomas/kong v1.14.0
 	github.com/crossplane/function-sdk-go v0.5.0
 	k8s.io/apimachinery v0.35.0
 	sigs.k8s.io/controller-tools v0.20.0
