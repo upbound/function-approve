@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/alecthomas/kong v1.13.0
 	github.com/crossplane/function-sdk-go v0.5.0
-	k8s.io/apimachinery v0.35.0
+	k8s.io/apimachinery v0.35.2
 	sigs.k8s.io/controller-tools v0.20.0
 )
 
