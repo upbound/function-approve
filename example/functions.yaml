@@ -6,11 +6,11 @@ metadata:
   annotations:
     render.crossplane.io/runtime: Development
 spec:
-  package: xpkg.upbound.io/upbound/function-approve:v0.2.0
+  package: xpkg.upbound.io/upbound/function-approve:v0.3.0
 ---
 apiVersion: pkg.crossplane.io/v1beta1
 kind: Function
 metadata:
   name: function-patch-and-transform
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.10.0
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.11.2
