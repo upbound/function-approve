@@ -5,7 +5,7 @@ go 1.26.10
 require (
 	github.com/alecthomas/kong v1.17.0
 	github.com/crossplane/function-sdk-go v0.7.1
-	k8s.io/apimachinery v0.37.0
+	k8s.io/apimachinery v0.37.2
 	sigs.k8s.io/controller-tools v0.23.0
 )
 
