@@ -238,26 +238,37 @@ func (f *Function) initializeAndCopyData(oxr, dxr *resource.Composite) {
 	}
 }
 
-// getStatusFromResources gets status from desired or observed XR
+// getStatusFromResources returns the observed XR status with the desired XR
+// status (set by earlier pipeline steps) merged on top. Reading only the desired
+// status whenever an earlier step set any field would hide the operator's
+// approval and the stored hash, which live in the observed status.
 func (f *Function) getStatusFromResources(oxr, dxr *resource.Composite) map[string]interface{} {
 	xrStatus := make(map[string]interface{})
-
-	// First try to get status from desired XR (pipeline changes)
-	if dxr.Resource.GetKind() != "" {
-		err := dxr.Resource.GetValueInto("status", &xrStatus)
-		if err == nil && len(xrStatus) > 0 {
-			return xrStatus
-		}
-		f.log.Debug("Cannot get status from Desired XR or it's empty")
-	}
-
-	// Fallback to observed XR status
-	err := oxr.Resource.GetValueInto("status", &xrStatus)
-	if err != nil {
+	if err := oxr.Resource.GetValueInto("status", &xrStatus); err != nil {
 		f.log.Debug("Cannot get status from Observed XR")
 	}
 
+	if dxr.Resource.GetKind() != "" {
+		desired := make(map[string]interface{})
+		if err := dxr.Resource.GetValueInto("status", &desired); err == nil {
+			mergeStatus(xrStatus, desired)
+		}
+	}
 	return xrStatus
+}
+
+// mergeStatus merges src into dst: nested objects are merged, any other src
+// value replaces the dst value.
+func mergeStatus(dst, src map[string]interface{}) {
+	for k, v := range src {
+		srcMap, srcIsMap := v.(map[string]interface{})
+		dstMap, dstIsMap := dst[k].(map[string]interface{})
+		if srcIsMap && dstIsMap {
+			mergeStatus(dstMap, srcMap)
+			continue
+		}
+		dst[k] = v
+	}
 }
 
 // propagateDesiredXR ensures the desired XR is properly propagated without changing existing data
