@@ -1,0 +1,53 @@
+# Renders a ConfigMap from spec.resources.data, then runs function-approve on
+# spec.resources. Until a change is approved, function-approve halts the
+# pipeline, so Crossplane applies nothing: the ConfigMap keeps its last approved
+# data (or doesn't exist yet).
+#
+# The render step also writes status.renderedKeys to the XR, so the test covers
+# a pipeline where an earlier step sets XR status, as patch-and-transform
+# ToCompositeFieldPath patches commonly do.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xapprovals.e2e.approve.upbound.io
+spec:
+  compositeTypeRef:
+    apiVersion: e2e.approve.upbound.io/v1alpha1
+    kind: XApproval
+  mode: Pipeline
+  pipeline:
+  - step: render
+    functionRef:
+      name: crossplane-contrib-function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $xr := .observed.composite.resource }}
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            namespace: {{ $xr.metadata.namespace }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: config
+              gotemplating.fn.crossplane.io/ready: "True"
+          data:
+            {{- range $k, $v := $xr.spec.resources.data }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
+          ---
+          apiVersion: {{ $xr.apiVersion }}
+          kind: {{ $xr.kind }}
+          status:
+            renderedKeys: {{ len $xr.spec.resources.data }}
+  - step: approve
+    functionRef:
+      name: solutions-function-approve
+    input:
+      apiVersion: approve.fn.crossplane.io/v1alpha1
+      kind: Input
+      dataField: spec.resources
+      approvalField: status.approved
+      currentHashField: status.currentHash

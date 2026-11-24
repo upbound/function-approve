@@ -1,0 +1,53 @@
+# End-to-end test for function-approve. `up test run tests/* --e2e` spins up a
+# throwaway Spaces control plane, installs this project (the XRD and Composition
+# in apis/, plus the function under test as a dependency) and creates the XR.
+#
+# - pre-assert-hook approve.sh: the pipeline is halted waiting for approval with
+#   nothing composed; approves through the status subresource, like an operator.
+# - up test waits for Ready and FunctionSuccess.
+# - post-assert-hook change.sh: changes spec.resources; the gate closes again and
+#   the ConfigMap keeps the approved data; approves; the change goes through.
+#
+# Hook paths are relative to the temp directory up test writes this manifest to,
+# which it creates directly under $TMPDIR. The e2e workflow sets TMPDIR to
+# e2e/.tmp, so ../../tests/... is this directory. Locally:
+#   mkdir -p .tmp && TMPDIR=$PWD/.tmp up test run tests/* --e2e
+apiVersion: meta.dev.upbound.io/v1alpha1
+kind: E2ETest
+metadata:
+  name: e2e-approve
+spec:
+  crossplane:
+    autoUpgrade:
+      channel: Rapid
+  defaultConditions:
+    - Ready
+    - FunctionSuccess
+  initResources:
+    # Lets Crossplane compose ConfigMaps (it has no ConfigMap access by default).
+    # Explicit verbs: the test user can only grant verbs it holds, so "*" fails.
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: e2e-crossplane-configmaps
+        labels:
+          rbac.crossplane.io/aggregate-to-crossplane: "true"
+      rules:
+        - apiGroups: [""]
+          resources: ["configmaps"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  manifests:
+    - apiVersion: e2e.approve.upbound.io/v1alpha1
+      kind: XApproval
+      metadata:
+        name: e2e-approve
+        namespace: default
+        annotations:
+          uptest.upbound.io/pre-assert-hook: ../../tests/e2etest-approve/approve.sh
+          uptest.upbound.io/post-assert-hook: ../../tests/e2etest-approve/change.sh
+      spec:
+        resources:
+          data:
+            version: v1
+  skipDelete: false
+  timeoutSeconds: 900
