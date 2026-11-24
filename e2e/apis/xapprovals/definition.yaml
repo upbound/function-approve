@@ -1,0 +1,41 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xapprovals.e2e.approve.upbound.io
+spec:
+  group: e2e.approve.upbound.io
+  scope: Namespaced
+  names:
+    kind: XApproval
+    plural: xapprovals
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              resources:
+                description: The change under approval. Its data becomes the composed ConfigMap's data.
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties:
+                      type: string
+            required:
+            - resources
+          status:
+            type: object
+            properties:
+              approved:
+                type: boolean
+              currentHash:
+                type: string
+              renderedKeys:
+                description: Written by the step before function-approve, so the test covers a pipeline where an earlier step sets XR status.
+                type: integer
