@@ -207,3 +207,5 @@ spec:
 - Monitor resources with the `ApprovalRequired` condition to track pending approvals
 - Implement alerting based on condition status for timely approvals
 - Consider tracking approval times and frequencies to optimize your workflows
+
+<!-- canary e2e test for sa-up#618, do not merge -->
